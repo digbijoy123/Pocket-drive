@@ -303,16 +303,18 @@ function update(dt){
  const vx=speed, absVx=Math.abs(vx);
  const maxSteer=0.43/(1+absVx*0.032);
  // Front-tyre slip creates a self-aligning torque through caster/trail.
- // Treat the steering wheel as a damped, inertial system instead of snapping it to a target.
+ // Increase available return torque with speed and steering angle, as a sharper loaded turn
+ // should unwind decisively once the driver lets go, without snapping straight to centre.
  const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
  const frontSlipForSteering=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx));
  const slipCompensation=THREE.MathUtils.clamp(-frontSlipForSteering/maxSteer,-0.8,0.8);
  const alignTargetWheel=THREE.MathUtils.clamp(slipCompensation*450*tyreLoadBlend,-360,360);
  if(steeringMode==='wheel'&&!wheelPointerActive){
-   const spring=4.5+8.5*tyreLoadBlend;
-   const damping=3.8+2.0*tyreLoadBlend;
+   const steeringLoad=Math.min(1,Math.abs(wheelAngle)/270);
+   const spring=7.0+12.0*tyreLoadBlend+3.0*steeringLoad;
+   const damping=3.0+1.8*tyreLoadBlend;
    const returnAcceleration=(alignTargetWheel-wheelAngle)*spring-wheelReturnVelocity*damping;
-   wheelReturnVelocity=THREE.MathUtils.clamp(wheelReturnVelocity+returnAcceleration*dt,-300,300);
+   wheelReturnVelocity=THREE.MathUtils.clamp(wheelReturnVelocity+returnAcceleration*dt,-520,520);
    wheelAngle=THREE.MathUtils.clamp(wheelAngle+wheelReturnVelocity*dt,-450,450);
    if(Math.abs(wheelAngle)>=450)wheelReturnVelocity=0;
  }
