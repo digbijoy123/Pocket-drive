@@ -40,7 +40,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
     <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
-    <div class="actions"><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
+    <div class="actions"><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
   </div>
 </div>
 <div class="mobile-controls">
@@ -170,6 +170,21 @@ function reset(){speed=0;car.position.set(roadX(10),roadY(10),-trackLength/2+10)
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 document.getElementById('pauseBtn').addEventListener('click',togglePause);
+const fullscreenBtn=document.getElementById('fullscreenBtn');
+function syncFullscreenButton(){
+ const active=!!document.fullscreenElement;
+ fullscreenBtn.textContent=active?'⛶ EXIT FULLSCREEN':'⛶ FULLSCREEN';
+ fullscreenBtn.setAttribute('aria-label',active?'Exit fullscreen':'Enter fullscreen');
+}
+fullscreenBtn.addEventListener('click',async()=>{
+ try{
+   if(document.fullscreenElement){await document.exitFullscreen();}
+   else if(document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen();}
+   else {showToast('Fullscreen is not supported in this browser');return;}
+ }catch(err){showToast('Use your browser menu → Add to Home screen for an immersive view');}
+ syncFullscreenButton();
+});
+document.addEventListener('fullscreenchange',syncFullscreenButton);
 document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
