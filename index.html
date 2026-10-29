@@ -20,7 +20,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 .steer,.pedal{width:clamp(62px,17vw,86px);height:clamp(62px,17vw,86px);border-radius:50%;display:grid;place-items:center;color:white;font-size:26px;font-weight:800;user-select:none;-webkit-user-select:none;touch-action:none}
 .pedal{border-radius:22px;width:clamp(66px,18vw,88px);height:clamp(72px,19vw,94px);font-size:12px;letter-spacing:.04em}
 .pedal.go{background:rgba(96,154,47,.8);border-color:#b7ff86}.pedal.stop{background:rgba(165,69,61,.78)}
-.steer.active,.pedal.active{filter:brightness(1.35);transform:scale(.96);background-color:#ffffff35}
+.steer.active,.pedal.active{filter:brightness(1.35);transform:scale(.96);background-color:#ffffff35}.control-stack{display:flex;flex-direction:column;gap:8px;pointer-events:auto}.pedal.utility{border-radius:16px;width:clamp(62px,17vw,86px);height:48px;font-size:10px;background:rgba(25,39,54,.88)}.pedal.handbrake{background:rgba(190,83,42,.88);border-color:#ffb17a}.pedal.utility.active{background:rgba(255,255,255,.3)}
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(120deg,rgba(8,18,30,.74),rgba(8,18,30,.25));padding:20px;z-index:5}
 .panel{width:min(440px,100%);border:1px solid #ffffff26;background:rgba(10,18,28,.86);backdrop-filter:blur(18px);border-radius:24px;padding:26px;box-shadow:0 25px 80px #0004}
 .eyebrow{color:var(--accent);font-size:11px;letter-spacing:.2em;font-weight:800}.panel h1{font-size:clamp(34px,8vw,52px);line-height:.98;letter-spacing:-.055em;margin:12px 0}.panel p{color:#c2cfdb;font-size:14px;line-height:1.6}.panel .btn{background:var(--accent);color:#14220e;border:0;padding:14px 18px;font-size:14px;width:100%;margin-top:10px}
@@ -49,6 +49,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <button class="steer" data-control="right" aria-label="Steer right">›</button>
   </div>
   <div class="pedals">
+    <div class="control-stack"><button class="pedal utility handbrake" data-control="handbrake">HANDBRAKE</button><button class="pedal utility" id="gearBtn" aria-label="Change gear">GEAR: D</button></div>
     <button class="pedal stop" data-control="brake">BRAKE</button>
     <button class="pedal go" data-control="gas">GAS ▲</button>
   </div>
@@ -151,8 +152,9 @@ for(const x of [-.68,.68]){
 const shadow=new THREE.Mesh(new THREE.CircleGeometry(1.7,16),new THREE.MeshBasicMaterial({color:0x1e3440,transparent:true,opacity:.2}));shadow.rotation.x=-Math.PI/2;shadow.scale.set(1,1.55,1);shadow.position.y=.02;car.add(shadow);
 car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
-const input={left:false,right:false,gas:false,brake:false};
-const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'brake'};
+const input={left:false,right:false,gas:false,brake:false,handbrake:false};
+let driveMode="D"; // D = forward, N = neutral, R = reverse
+const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
 addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
 addEventListener('keyup',e=>{if(keyMap[e.key])input[keyMap[e.key]]=false});
 document.querySelectorAll('[data-control]').forEach(el=>{
@@ -166,9 +168,13 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;steeringAngle=0;car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;steeringAngle=0;driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
+const gearBtn=document.getElementById('gearBtn');
+function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
+function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
+gearBtn?.addEventListener('click',changeGear);
 document.getElementById('pauseBtn').addEventListener('click',togglePause);
 const fullscreenBtn=document.getElementById('fullscreenBtn');
 function syncFullscreenButton(){
@@ -190,26 +196,29 @@ function update(dt){
  if(paused)return;
  // Lightweight arcade-sim physics: engine force, service braking, rolling/aero drag,
  // speed-sensitive steering, and lateral tyre grip. Speeds are metres per second.
- const throttle=input.gas?1:0, braking=input.brake?1:0;
+ const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const steerInput=(input.left?1:0)-(input.right?1:0);
  const onRoad=Math.abs(car.position.x-roadX(THREE.MathUtils.clamp(trackZ(),0,trackLength)))<roadWidth/2;
  const surfaceGrip=onRoad?1:0.48;
 
  // Smooth steering input so the car doesn't snap instantly from lock to lock.
- const maxSteer=0.48/(1+Math.abs(speed)*0.075);
- steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,5.5,dt);
+ const maxSteer=0.58/(1+Math.abs(speed)*0.055);
+ steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,7.0,dt);
 
  // Throttle accelerates forward; holding brake slows the car and can select reverse.
  if(throttle){
-   if(speed<0) speed=Math.min(0,speed+14*dt);
-   else speed+=7.2*dt;
+   if(driveMode==='D'){if(speed<0)speed=Math.min(0,speed+18*dt);else speed+=7.2*dt;}
+   else if(driveMode==='R'){if(speed>0)speed=Math.max(0,speed-18*dt);else speed-=4.0*dt;}
  }
  if(braking){
-   if(speed>0.7) speed=Math.max(0,speed-15*dt);
-   else if(speed>-5.5) speed-=5.0*dt;
+   if(Math.abs(speed)>0.7)speed-=Math.sign(speed)*17*dt;
+   else if(driveMode==='R')speed=-Math.min(5.5,Math.abs(speed)+2.5*dt);
  }
+ // Handbrake locks the rear axle and slows the car; steering can induce a controlled slide.
+ if(handbrake){speed-=Math.sign(speed)*11*dt;}
  // Aerodynamic drag rises with speed; rolling resistance remains at low speed.
  speed-= (0.22+Math.abs(speed)*0.018+speed*speed*0.0008)*Math.sign(speed)*dt;
+ if(driveMode==='N'&&Math.abs(speed)<0.35)speed=0;
  speed=THREE.MathUtils.clamp(speed,-5.5,33);
 
  // Bicycle-model steering: front-wheel angle produces a yaw rate based on speed.
@@ -217,11 +226,12 @@ function update(dt){
  const yawRate=(speed/wheelbase)*Math.tan(steeringAngle)*surfaceGrip;
  yaw+=yawRate*dt;
 
- // Lateral tyre force progressively removes side slip. Lower grip off-road allows
- // the car to slide wider through corners rather than being pulled back to the road.
- const lateralGrip=onRoad?4.8:1.15;
- lateralSpeed+=(-yawRate*speed-lateralSpeed*lateralGrip)*dt;
- lateralSpeed=THREE.MathUtils.clamp(lateralSpeed,-8,8);
+ // Strong tyre grip damps unwanted sideways velocity. The handbrake deliberately
+ // reduces rear grip so sliding is intentional rather than constant.
+ const lateralGrip=handbrake?0.7:(onRoad?11.0:2.0);
+ lateralSpeed+=(-lateralSpeed*lateralGrip)*dt;
+ if(handbrake&&Math.abs(speed)>5) lateralSpeed+=steerInput*speed*0.11*dt;
+ lateralSpeed=THREE.MathUtils.clamp(lateralSpeed,-5,5);
  car.position.x+=(Math.sin(yaw)*speed+Math.cos(yaw)*lateralSpeed)*dt;
  car.position.z+=(Math.cos(yaw)*speed-Math.sin(yaw)*lateralSpeed)*dt;
 
@@ -240,7 +250,7 @@ function update(dt){
  car.position.y=roadY(z);
  car.rotation.y=yaw;
  // Body roll and pitch communicate weight transfer without changing the collision model.
- const targetRoll=THREE.MathUtils.clamp(-steeringAngle*speed*0.018,-0.12,0.12);
+ const targetRoll=THREE.MathUtils.clamp(-steeringAngle*speed*0.012,-0.09,0.09);
  car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,4,dt);
  const targetPitch=throttle?-0.025:(braking&&speed>0?0.035:0);
  car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.5,dt);
@@ -257,7 +267,7 @@ function update(dt){
  camera.position.lerp(camPos,1-Math.pow(0.002,dt));
  camera.lookAt(camTarget);
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
- gearEl.textContent=speed<-0.5?'R · REVERSE':(Math.abs(speed)<0.5?'N · IDLE':(Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE'));
+ gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
 }
 function loop(now){const dt=Math.min(.035,(now-last)/1000||0);last=now;update(dt);renderer.render(scene,camera);requestAnimationFrame(loop)}
 camera.position.set(car.position.x,5,car.position.z-11);camera.lookAt(car.position.x,1,car.position.z+3);requestAnimationFrame(loop);
