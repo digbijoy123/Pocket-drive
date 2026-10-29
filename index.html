@@ -425,7 +425,7 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const up=e=>{e.preventDefault();input[name]=false;el.classList.remove('active')};
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
-let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
+let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, paused=true, started=false, last=performance.now();
 
 // Lightweight synthesized car audio: no mismatched external sound clips.
 let audioEnabled=true, audioReady=false, audioCtx=null, engineOsc1=null, engineOsc2=null, engineFilter=null, engineGain=null, engineHarmonic=null, harmonicGain=null, tireNoise=null, tireFilter=null, tireGain=null, lastSquealAt=0;
@@ -485,7 +485,7 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;driftAmount=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
 document.getElementById('resetBtn').addEventListener('click',()=>{reset();settingsPanel.classList.remove('open');if(started)paused=false;});
 const cameraBtn=document.getElementById('cameraBtn');
@@ -670,13 +670,19 @@ function update(dt){
  // saturating the tyres and preventing the car from responding to steering.
  const alphaFront=Math.atan2(Math.sin(rawFrontSlip),Math.cos(rawFrontSlip));
  const alphaRear=Math.atan2(Math.sin(rawRearSlip),Math.cos(rawRearSlip));
+ // Drift builds progressively from a handbrake pull or a powered, steered corner.
+ // It fades out smoothly when the driver straightens up instead of snapping back to full grip.
+ const rearSlipMagnitude=Math.abs(alphaRear);
+ const poweredTurn=throttle>0&&Math.abs(steerInput)>0.18&&absVx>7&&rearSlipMagnitude>0.12;
+ const driftTarget=absVx>5?(handbrake?1:(poweredTurn?THREE.MathUtils.clamp(0.35+rearSlipMagnitude*0.75,0.35,0.72):0)):0;
+ driftAmount=THREE.MathUtils.damp(driftAmount,driftTarget,driftTarget>driftAmount?4.8:2.0,dt);
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
  const frontLimit=mu*frontLoad;
- // Rear grip falls as the rear wheels lock or slide, allowing controllable oversteer.
- const rearMu=mu*(1-rearLock);
- const rearLimit=rearMu*rearLoad;
+ // Rear tyres progressively lose lateral grip during a slide, while front grip stays available for counter-steering.
+ const rearMu=mu*(1-rearLock)*(1-driftAmount*0.48);
+ const rearLimit=Math.max(250,rearMu*rearLoad);
  // Smooth tyre-force saturation avoids the abrupt feel of a hard force clamp.
  let frontFy=-frontLimit*Math.tanh(vehicle.cf*alphaFront/Math.max(1,frontLimit))*lowSpeedBlend;
  let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;
@@ -689,10 +695,10 @@ function update(dt){
  const yawAccel=(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
  lateralSpeed+=lateralAccel*dt;
  yawRate+=yawAccel*dt;
- // Tyre damping is modest on tarmac; grass has lower lateral grip and stronger damping.
- lateralSpeed*=Math.exp(-(onRoad?0.28:1.2)*dt);
- yawRate*=Math.exp(-0.10*dt);
- yawRate=THREE.MathUtils.clamp(yawRate,-1.2,1.2);
+ // Preserve momentum through a drift; outside a slide the car settles quickly and predictably.
+ lateralSpeed*=Math.exp(-(onRoad?THREE.MathUtils.lerp(0.28,0.12,driftAmount):1.2)*dt);
+ yawRate*=Math.exp(-THREE.MathUtils.lerp(0.10,0.035,driftAmount)*dt);
+ yawRate=THREE.MathUtils.clamp(yawRate,-THREE.MathUtils.lerp(1.2,1.65,driftAmount),THREE.MathUtils.lerp(1.2,1.65,driftAmount));
  if(absVx<0.8){lateralSpeed*=Math.exp(-4*dt);yawRate*=Math.exp(-5*dt);}
  yaw+=yawRate*dt;
  car.position.x+=(Math.sin(yaw)*speed+Math.cos(yaw)*lateralSpeed)*dt;
