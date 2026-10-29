@@ -482,7 +482,7 @@ function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
 gearBtn?.addEventListener('click',changeGear);
 document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>{const next=el.dataset.gear;if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}if(next==='N')speed=0;driveMode=next;document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));syncGearButton();showToast('GEAR '+driveMode);}));
-document.getElementById('pauseBtn').addEventListener('click',togglePause);
+// Pause is opened through the on-screen settings button.
 const fullscreenBtn=document.getElementById('fullscreenBtn');
 function syncFullscreenButton(){
  const active=!!document.fullscreenElement;
