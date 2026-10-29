@@ -554,8 +554,8 @@ function update(dt){
  let driveForce=0;
  if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/(sportsMode?64:43),sportsMode?0.18:0.12,1)*(handbrake?0.3:1);
  else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
- else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-1500*THREE.MathUtils.clamp(1-absVx/5.5,0.12,1);
- else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*2.5;
+ else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-(sportsMode?vehicle.engineForce*0.58:vehicle.engineForce*0.48)*THREE.MathUtils.clamp(1-absVx/(sportsMode?13:10),0.22,1)*(handbrake?0.3:1);
+ else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*3.5;
  const aeroForce=0.5*vehicle.airDensity*vehicle.cdA*vx*absVx;
  const rollingForce=absVx>0.15?vehicle.rolling*Math.sign(vx):0;
  let brakeForce=0;
@@ -566,8 +566,8 @@ function update(dt){
  const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce-Math.sign(vx)*rearBrakeForce)/vehicle.mass;
  speed+=longitudinalAccel*dt;
  if(Math.abs(speed)<0.08&&(!throttle||handbrake))speed=0;
- speed=THREE.MathUtils.clamp(speed,-5.5,sportsMode?64:43);
- if(driveMode==='R')speed=Math.max(speed,-5.5);
+ speed=THREE.MathUtils.clamp(speed,sportsMode?-13:-10,sportsMode?64:43);
+ if(driveMode==='R')speed=Math.min(speed,0);
  if(driveMode==='D')speed=Math.max(speed,0);
  if(driveMode==='N'&&Math.abs(speed)<0.15)speed=0;
 
@@ -630,7 +630,8 @@ function update(dt){
  const offset=car.position.x-roadX(z);
  car.position.y=roadY(z);
  car.rotation.y=yaw;
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
+ // Front tyre visuals must point the same way as the steering rack in both D and R.
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
