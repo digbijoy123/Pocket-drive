@@ -342,7 +342,7 @@ function update(dt){
  // Fade in tyre response smoothly as the car gains rolling speed.
  const lowSpeedBlend=THREE.MathUtils.smoothstep(absVx,0.8,3.0);
  const vxForTyres=Math.max(2.5,absVx)*(vx<0?-1:1);
- const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))-steeringAngle;
+ const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))+steeringAngle;
  const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,Math.max(2.5,absVx));
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
@@ -380,7 +380,7 @@ function update(dt){
  const offset=car.position.x-roadX(z);
  car.position.y=roadY(z);
  car.rotation.y=yaw;
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
  // Body roll builds with lateral acceleration (and therefore usually with speed), but remains restrained.
  const rollScale=THREE.MathUtils.smoothstep(Math.abs(speed),2,24);
