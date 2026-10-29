@@ -438,8 +438,8 @@ function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
- const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
-   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
+ const vehicle={mass:sportMode?1120:1200,iz:sportMode?1650:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
+   cf:sportMode?76000:62000,cr:sportMode?82000:68000,mu:sportMode?1.08:0.92,engineForce:sportMode?6100:3500,brakeForce:sportMode?10800:8500,cdA:sportMode?0.58:0.68,airDensity:1.225,rolling:sportMode?145:170,
    wheelRadius:.31,rearBrakeTorque:1450};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
