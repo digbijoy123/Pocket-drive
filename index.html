@@ -82,6 +82,8 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 .menu-logo sup{font-size:.2em;letter-spacing:.12em;margin-left:8px;color:#c5d2dd;vertical-align:top;}
 .menu-tagline{font-size:14px!important;color:#d2dde7!important;margin:0 0 26px!important;letter-spacing:.02em;}
 .menu-buttons{display:grid;gap:10px;margin-top:12px;}
+.car-select-panel{width:min(94vw,620px);max-height:90vh;overflow:auto}.car-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.car-option{min-height:118px;text-align:left;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:14px;border-radius:16px;background:#ffffff0b!important;border:1px solid #ffffff2b!important;color:#f5f7fb!important}.car-swatch{width:100%;height:42px;border-radius:10px;position:relative;overflow:hidden;background:linear-gradient(135deg,var(--car-color),#111827)}.car-swatch:before{content:"";position:absolute;width:58%;height:22px;left:21%;top:10px;border-radius:8px 8px 4px 4px;background:var(--car-color);border:2px solid #ffffff66;transform:skewX(-12deg)}.car-swatch:after{content:"";position:absolute;width:24%;height:12px;left:38%;top:5px;border-radius:6px 6px 2px 2px;background:#8fc9d5}.car-option strong{font-size:13px;letter-spacing:.08em}.car-option small{color:#aab8c8;font-size:10px}.car-option:active{border-color:var(--accent)!important}
+@media(max-width:520px){.car-grid{gap:8px}.car-option{min-height:108px;padding:10px}}
 .menu-buttons .btn{width:100%;margin:0;display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 18px;border-radius:14px;font-size:14px;letter-spacing:.1em;}
 .menu-play{background:var(--accent)!important;color:#13200d!important;box-shadow:0 8px 28px #9cff5725;}
 .menu-play span{font-size:12px;}
@@ -232,10 +234,24 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <p class="menu-tagline">Find your road. Feel the drive.</p>
     <div class="menu-buttons">
       <button class="btn menu-play" id="startBtn"><span>▶</span> PLAY</button>
+      <button class="btn menu-settings" id="chooseCarBtn"><span>🚘</span> CHOOSE CAR</button>
       <button class="btn menu-settings" id="mainSettingsBtn"><span>⚙</span> SETTINGS</button>
-      
     </div>
     <div class="menu-footer">HILLSIDE RUN <span>•</span> VERSION 1.0</div>
+  </div>
+</div>
+<div class="overlay main-menu" id="carSelectScreen" style="display:none">
+  <div class="panel menu-panel car-select-panel">
+    <div class="eyebrow">YOUR RIDE · PICK A STYLE</div>
+    <div class="menu-logo" style="font-size:clamp(26px,5vw,42px);margin-top:12px">CHOOSE <span>YOUR CAR</span></div>
+    <p class="menu-tagline" style="margin-bottom:12px!important">Different body styles and colors. Same driving performance.</p>
+    <div class="car-grid">
+      <button class="btn car-option" data-car="sport"><div class="car-swatch" style="--car-color:#e95b49"></div><strong>SPORT COUPE</strong><small>Red · Low & sleek</small></button>
+      <button class="btn car-option" data-car="hatch"><div class="car-swatch" style="--car-color:#38a8ff"></div><strong>CITY HATCH</strong><small>Blue · Compact</small></button>
+      <button class="btn car-option" data-car="suv"><div class="car-swatch" style="--car-color:#52c878"></div><strong>ADVENTURE SUV</strong><small>Green · Tall body</small></button>
+      <button class="btn car-option" data-car="classic"><div class="car-swatch" style="--car-color:#f2c14e"></div><strong>CLASSIC SEDAN</strong><small>Yellow · Balanced</small></button>
+    </div>
+    <button class="btn menu-settings" id="backToMenuBtn" style="width:100%;margin-top:14px">← BACK TO MENU</button>
   </div>
 </div>
 <script type="module">
@@ -363,6 +379,22 @@ const hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,.23,1.12),redMat);hood.posit
 const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.52,.72,1.7),yellowMat);cabin.position.set(0,1.42,-.25);car.add(cabin);
 const windshield=new THREE.Mesh(new THREE.BoxGeometry(1.38,.48,.08),glassMat);windshield.position.set(0,1.48,.62);windshield.rotation.x=-.15;car.add(windshield);
 const rearGlass=new THREE.Mesh(new THREE.BoxGeometry(1.35,.45,.08),glassMat);rearGlass.position.set(0,1.47,-1.08);rearGlass.rotation.x=.12;car.add(rearGlass);
+let selectedCar='sport';
+const carStyles={
+ sport:{color:0xe95b49,body:[2.05,.62,4.0],cabin:[1.48,.58,1.65],cabinY:1.38,cabinZ:-.28,hood:[1.9,.20,1.18],hoodY:1.10,hoodZ:1.18,glassY:1.43,frontGlassZ:.58,rearGlassY:1.42,rearGlassZ:-1.08},
+ hatch:{color:0x38a8ff,body:[2.02,.76,3.65],cabin:[1.55,.78,1.85],cabinY:1.48,cabinZ:-.25,hood:[1.86,.24,.92],hoodY:1.14,hoodZ:1.02,glassY:1.53,frontGlassZ:.52,rearGlassY:1.53,rearGlassZ:-1.02},
+ suv:{color:0x52c878,body:[2.12,.92,3.95],cabin:[1.62,.92,1.85],cabinY:1.62,cabinZ:-.25,hood:[1.94,.30,1.02],hoodY:1.26,hoodZ:1.12,glassY:1.67,frontGlassZ:.59,rearGlassY:1.65,rearGlassZ:-1.08},
+ classic:{color:0xf2c14e,body:[2.08,.70,4.05],cabin:[1.53,.66,1.82],cabinY:1.43,cabinZ:-.22,hood:[1.94,.23,1.15],hoodY:1.12,hoodZ:1.18,glassY:1.49,frontGlassZ:.60,rearGlassY:1.47,rearGlassZ:-1.04}
+};
+function applyCarStyle(id){
+ const st=carStyles[id]||carStyles.sport;selectedCar=id;
+ body.geometry.dispose();body.geometry=new THREE.BoxGeometry(...st.body);
+ cabin.geometry.dispose();cabin.geometry=new THREE.BoxGeometry(...st.cabin);
+ hood.geometry.dispose();hood.geometry=new THREE.BoxGeometry(...st.hood);
+ body.position.y=.82;hood.position.set(0,st.hoodY,st.hoodZ);cabin.position.set(0,st.cabinY,st.cabinZ);
+ redMat.color.setHex(st.color);yellowMat.color.setHex(st.color);
+ windshield.position.set(0,st.glassY,st.frontGlassZ);rearGlass.position.set(0,st.rearGlassY,st.rearGlassZ);
+}
 const wheelAssemblies=[],frontWheelMeshes=[];
 for(const x of [-1,1]) for(const z of [-1.25,1.28]){
  const assembly=new THREE.Group();assembly.position.set(x*1.02,.48,z);assembly.userData.axle=z>0?'front':'rear';car.add(assembly);wheelAssemblies.push(assembly);
@@ -541,23 +573,16 @@ function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h 
 gearBtn?.addEventListener('click',changeGear);
 document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>{const next=el.dataset.gear;if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}if(next==='N')speed=0;driveMode=next;document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));syncGearButton();showToast('GEAR '+driveMode);}));
 // Pause is opened through the on-screen settings button.
-// PLAY requests immersive fullscreen directly from the user's tap, then starts immediately.
-document.getElementById('startBtn').addEventListener('click',async()=>{
- const startScreen=document.getElementById('startScreen');
- try{
-   if(!document.fullscreenElement&&document.documentElement.requestFullscreen){
-     await document.documentElement.requestFullscreen();
-   }
-   if(screen.orientation&&screen.orientation.lock){
-     try{await screen.orientation.lock('landscape');}catch(_){}
-   }
- }catch(_){
-   showToast('Starting game · use browser menu for fullscreen if needed');
- }
- started=true;paused=false;initGameAudio();syncAudioState();
- yaw=roadHeading(trackZ());car.rotation.y=yaw;
- startScreen.style.display='none';last=performance.now();
-});
+async function launchGame(){
+ const startScreen=document.getElementById('startScreen'),chooser=document.getElementById('carSelectScreen');
+ try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();if(screen.orientation&&screen.orientation.lock){try{await screen.orientation.lock('landscape')}catch(_){}}}catch(_){showToast('Starting game · fullscreen may be restricted by browser');}
+ started=true;paused=false;initGameAudio();syncAudioState();yaw=roadHeading(trackZ());car.rotation.y=yaw;
+ startScreen.style.display='none';chooser.style.display='none';last=performance.now();
+}
+document.getElementById('startBtn').addEventListener('click',launchGame);
+document.getElementById('chooseCarBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='flex';});
+document.getElementById('backToMenuBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='none';});
+document.querySelectorAll('[data-car]').forEach(btn=>btn.addEventListener('click',()=>{applyCarStyle(btn.dataset.car);launchGame();}));
 function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
