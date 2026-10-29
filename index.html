@@ -170,7 +170,7 @@ function reset(){speed=0;car.position.set(roadX(10),roadY(10),-trackLength/2+10)
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 document.getElementById('pauseBtn').addEventListener('click',togglePause);
-document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;document.getElementById('startScreen').style.display='none';last=performance.now()});
+document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
  // Speed is measured in metres per second; steering changes the car's heading,
