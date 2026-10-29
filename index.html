@@ -182,7 +182,7 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;steeringAngle=0;driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 const gearBtn=document.getElementById('gearBtn');
@@ -191,7 +191,7 @@ const settingsPanel=document.getElementById('settingsPanel');
 const steeringWheel=document.getElementById('steeringWheel');
 const steeringModeNote=document.getElementById('steeringModeNote');
 function setSteeringMode(mode){
- steeringMode=mode;
+ steeringMode=mode;wheelPointerActive=false;
  mobileControls.classList.toggle('wheel-mode',mode==='wheel');
  document.getElementById('buttonSteeringBtn').style.outline=mode==='buttons'?'2px solid #9cff57':'none';
  document.getElementById('wheelSteeringBtn').style.outline=mode==='wheel'?'2px solid #9cff57':'none';
@@ -203,19 +203,21 @@ document.getElementById('settingsBtn').addEventListener('click',()=>settingsPane
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
-let wheelLastPointerAngle=null;
-function wheelPointerAngle(e){const r=steeringWheel.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI;}
-steeringWheel.addEventListener('pointerdown',e=>{e.preventDefault();wheelPointerActive=true;wheelLastPointerAngle=wheelPointerAngle(e);steeringWheel.setPointerCapture(e.pointerId);});
+let wheelDragStartX=0,wheelDragStartAngle=0;
+steeringWheel.addEventListener('pointerdown',e=>{
+ e.preventDefault();wheelPointerActive=true;wheelDragStartX=e.clientX;wheelDragStartAngle=wheelAngle;
+ try{steeringWheel.setPointerCapture(e.pointerId)}catch{}
+});
 steeringWheel.addEventListener('pointermove',e=>{
  if(!wheelPointerActive)return;e.preventDefault();
- const next=wheelPointerAngle(e);let delta=next-wheelLastPointerAngle;
- if(delta>180)delta-=360;if(delta<-180)delta+=360;
- wheelAngle=THREE.MathUtils.clamp(wheelAngle+delta,-125,125);wheelLastPointerAngle=next;
+ // Horizontal drag maps smoothly to wheel rotation; no angle-wrap jumps near the wheel's centre.
+ wheelAngle=THREE.MathUtils.clamp(wheelDragStartAngle+(e.clientX-wheelDragStartX)*1.65,-160,160);
  steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
- input.left=wheelAngle < -8;input.right=wheelAngle > 8;
 });
-function releaseWheel(){wheelPointerActive=false;wheelLastPointerAngle=null;input.left=false;input.right=false;wheelAngle=THREE.MathUtils.damp(wheelAngle,0,8,1/30);steeringWheel.style.transform='rotate('+wheelAngle+'deg)';}
-steeringWheel.addEventListener('pointerup',releaseWheel);steeringWheel.addEventListener('pointercancel',releaseWheel);steeringWheel.addEventListener('lostpointercapture',()=>{if(wheelPointerActive)releaseWheel();});
+function releaseWheel(){wheelPointerActive=false;}
+steeringWheel.addEventListener('pointerup',releaseWheel);
+steeringWheel.addEventListener('pointercancel',releaseWheel);
+steeringWheel.addEventListener('lostpointercapture',()=>{wheelPointerActive=false;});
 
 function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
@@ -242,12 +244,15 @@ function update(dt){
  // Lightweight arcade-sim physics: engine force, service braking, rolling/aero drag,
  // speed-sensitive steering, and lateral tyre grip. Speeds are metres per second.
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
- const steerInput=(input.left?1:0)-(input.right?1:0);
+ // Wheel steering is analog; button steering remains full-lock while pressed.
+ if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,5.5,dt);
+ if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
+ const steerInput=steeringMode==='wheel'?wheelAngle/160:((input.right?1:0)-(input.left?1:0));
  const onRoad=Math.abs(car.position.x-roadX(THREE.MathUtils.clamp(trackZ(),0,trackLength)))<roadWidth/2;
  const surfaceGrip=onRoad?1:0.48;
 
  // Smooth steering input so the car doesn't snap instantly from lock to lock.
- const maxSteer=0.58/(1+Math.abs(speed)*0.055);
+ const maxSteer=0.62/(1+Math.abs(speed)*0.055);
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,7.0,dt);
 
  // Throttle accelerates forward; holding brake slows the car and can select reverse.
