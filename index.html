@@ -103,7 +103,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
     <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
-    <div class="actions"><button class="btn" id="cameraBtn" aria-label="Change camera view">CAM: FAR</button><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="soundBtn" aria-label="Toggle game audio">🔊 SOUND ON</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
+    <div class="actions"><button class="btn" id="cameraBtn" aria-label="Change camera view">CAM: FAR</button><button class="btn" id="sportsModeBtn" aria-pressed="false">SPORT: OFF</button><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="soundBtn" aria-label="Toggle game audio">🔊 SOUND ON</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
   </div>
 </div>
 <div class="mobile-controls">
@@ -243,6 +243,10 @@ const shadow=new THREE.Mesh(new THREE.CircleGeometry(1.7,16),new THREE.MeshBasic
 car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
+let sportsMode=false;
+const sportsModeBtn=document.getElementById("sportsModeBtn");
+function toggleSportsMode(){sportsMode=!sportsMode;sportsModeBtn.textContent=sportsMode?"SPORT: ON":"SPORT: OFF";sportsModeBtn.setAttribute("aria-pressed",String(sportsMode));sportsModeBtn.style.background=sportsMode?"rgba(156,255,87,.92)":"var(--glass)";sportsModeBtn.style.color=sportsMode?"#14220e":"#fff";showToast(sportsMode?"SPORT MODE · EXTRA POWER":"NORMAL MODE");}
+sportsModeBtn.addEventListener("click",toggleSportsMode);
 let driveMode="D"; // D = forward, N = neutral, R = reverse
 let steeringMode="buttons", wheelAngle=0, wheelReturnVelocity=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
@@ -421,7 +425,7 @@ function update(dt){
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
  const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
-   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
+   cf:62000,cr:68000,mu:0.92,engineForce:sportsMode?5600:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
    wheelRadius:.31,rearBrakeTorque:1450};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
@@ -454,7 +458,7 @@ function update(dt){
 
  // Longitudinal force balance.
  let driveForce=0;
- if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/43,0.12,1);
+ if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/(sportsMode?58:43),0.12,1);
  else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
  else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-1500*THREE.MathUtils.clamp(1-absVx/5.5,0.12,1);
  else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*2.5;
@@ -468,7 +472,7 @@ function update(dt){
  const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce-Math.sign(vx)*rearBrakeForce)/vehicle.mass;
  speed+=longitudinalAccel*dt;
  if(Math.abs(speed)<0.08&&!throttle)speed=0;
- speed=THREE.MathUtils.clamp(speed,-5.5,43);
+ speed=THREE.MathUtils.clamp(speed,-5.5,sportsMode?58:43);
  if(driveMode==='R')speed=Math.max(speed,-5.5);
  if(driveMode==='D')speed=Math.max(speed,0);
  if(driveMode==='N'&&Math.abs(speed)<0.15)speed=0;
