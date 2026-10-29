@@ -16,7 +16,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 .center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;text-shadow:0 2px 8px #19334855;font-size:12px;letter-spacing:.12em;color:#fff;opacity:.8}
 .bottom{display:flex;justify-content:space-between;align-items:end;gap:12px}.hint{pointer-events:none;padding:9px 12px;border-radius:12px;font-size:11px;color:#d6e2ed;max-width:55%}.actions{pointer-events:auto;display:flex;gap:8px}.btn{color:#fff;border-radius:12px;padding:10px 13px;font-weight:700;font-size:12px;cursor:pointer;touch-action:manipulation}.btn:active{transform:scale(.97)}
 .mobile-controls{position:fixed;inset:auto 0 18px;display:none;align-items:end;justify-content:space-between;padding:0 18px;pointer-events:none;gap:14px}
-.steering{display:flex;gap:9px;pointer-events:auto}.pedals{display:flex;gap:9px;pointer-events:auto}
+.steering{display:flex;gap:9px;pointer-events:auto}.pedals{display:flex;gap:9px;pointer-events:auto}.steering-wheel-wrap{display:none;pointer-events:auto;align-items:center;justify-content:center;width:clamp(120px,31vw,170px);height:clamp(120px,31vw,170px);touch-action:none}.steering-wheel{width:100%;height:100%;border:clamp(8px,2vw,12px) solid #dce6ee;border-radius:50%;background:radial-gradient(circle,#34495a 0 16%,#172532 17% 35%,transparent 36%),linear-gradient(135deg,#657888,#172532 55%,#4d6070);box-shadow:0 8px 25px #0006,inset 0 0 0 4px #0a121b;position:relative;touch-action:none;transform:rotate(0deg)}.steering-wheel:before{content:"";position:absolute;width:12%;height:43%;background:#dce6ee;border-radius:8px;left:44%;top:8%;transform-origin:50% 100%;box-shadow:0 0 0 2px #293744}.steering-wheel:after{content:"";position:absolute;width:70%;height:10%;background:#dce6ee;border-radius:8px;left:15%;top:44%;box-shadow:0 0 0 2px #293744}.wheel-hub{position:absolute;z-index:1;width:27%;height:27%;left:36.5%;top:36.5%;border-radius:50%;background:#283a49;border:3px solid #aab8c8;display:grid;place-items:center;font-size:10px;font-weight:900;letter-spacing:.04em}.settings-panel{display:none}.settings-panel.open{display:flex}.settings-actions{display:flex;gap:8px}.settings-actions .btn{flex:1}.settings-note{font-size:12px!important;color:#b6c5d3!important}.mobile-controls.wheel-mode .steering{display:none}.mobile-controls.wheel-mode .steering-wheel-wrap{display:flex}
 .steer,.pedal{width:clamp(62px,17vw,86px);height:clamp(62px,17vw,86px);border-radius:50%;display:grid;place-items:center;color:white;font-size:26px;font-weight:800;user-select:none;-webkit-user-select:none;touch-action:none}
 .pedal{border-radius:22px;width:clamp(66px,18vw,88px);height:clamp(72px,19vw,94px);font-size:12px;letter-spacing:.04em}
 .pedal.go{background:rgba(96,154,47,.8);border-color:#b7ff86}.pedal.stop{background:rgba(165,69,61,.78)}
@@ -40,13 +40,16 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
     <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
-    <div class="actions"><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
+    <div class="actions"><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
   </div>
 </div>
 <div class="mobile-controls">
   <div class="steering">
     <button class="steer" data-control="left" aria-label="Steer left">‹</button>
     <button class="steer" data-control="right" aria-label="Steer right">›</button>
+  </div>
+  <div class="steering-wheel-wrap" id="steeringWheelWrap" aria-label="Drag steering wheel to steer">
+    <div class="steering-wheel" id="steeringWheel"><div class="wheel-hub">PD</div></div>
   </div>
   <div class="pedals">
     <div class="control-stack"><button class="pedal utility handbrake" data-control="handbrake">HANDBRAKE</button><button class="pedal utility" id="gearBtn" aria-label="Change gear">GEAR: D</button></div>
@@ -55,6 +58,16 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   </div>
 </div>
 <div id="toast"></div>
+<div class="overlay settings-panel" id="settingsPanel">
+  <div class="panel">
+    <div class="eyebrow">DRIVING PREFERENCES</div>
+    <h1>Settings</h1>
+    <p>Choose how you want to steer. Your accelerator, brake, handbrake and gear controls remain available.</p>
+    <div class="settings-actions"><button class="btn" id="buttonSteeringBtn">‹ › BUTTONS</button><button class="btn" id="wheelSteeringBtn">◉ WHEEL</button></div>
+    <p class="settings-note" id="steeringModeNote">Steering mode: buttons</p>
+    <button class="btn" id="closeSettingsBtn">DONE</button>
+  </div>
+</div>
 <div class="overlay" id="startScreen">
   <div class="panel">
     <div class="eyebrow">A SMALL WORLD. AN OPEN ROAD.</div>
@@ -154,6 +167,7 @@ car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
 let driveMode="D"; // D = forward, N = neutral, R = reverse
+let steeringMode="buttons", wheelAngle=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
 addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
 addEventListener('keyup',e=>{if(keyMap[e.key])input[keyMap[e.key]]=false});
@@ -172,6 +186,37 @@ function reset(){speed=0;lateralSpeed=0;steeringAngle=0;driveMode='D';syncGearBu
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 const gearBtn=document.getElementById('gearBtn');
+const mobileControls=document.querySelector('.mobile-controls');
+const settingsPanel=document.getElementById('settingsPanel');
+const steeringWheel=document.getElementById('steeringWheel');
+const steeringModeNote=document.getElementById('steeringModeNote');
+function setSteeringMode(mode){
+ steeringMode=mode;
+ mobileControls.classList.toggle('wheel-mode',mode==='wheel');
+ document.getElementById('buttonSteeringBtn').style.outline=mode==='buttons'?'2px solid #9cff57':'none';
+ document.getElementById('wheelSteeringBtn').style.outline=mode==='wheel'?'2px solid #9cff57':'none';
+ steeringModeNote.textContent='Steering mode: '+(mode==='wheel'?'steering wheel':'left/right buttons');
+ input.left=false;input.right=false;wheelAngle=0;steeringWheel.style.transform='rotate(0deg)';
+ showToast('Steering: '+(mode==='wheel'?'wheel':'buttons'));
+}
+document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
+document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
+document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
+document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
+let wheelLastPointerAngle=null;
+function wheelPointerAngle(e){const r=steeringWheel.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI;}
+steeringWheel.addEventListener('pointerdown',e=>{e.preventDefault();wheelPointerActive=true;wheelLastPointerAngle=wheelPointerAngle(e);steeringWheel.setPointerCapture(e.pointerId);});
+steeringWheel.addEventListener('pointermove',e=>{
+ if(!wheelPointerActive)return;e.preventDefault();
+ const next=wheelPointerAngle(e);let delta=next-wheelLastPointerAngle;
+ if(delta>180)delta-=360;if(delta<-180)delta+=360;
+ wheelAngle=THREE.MathUtils.clamp(wheelAngle+delta,-125,125);wheelLastPointerAngle=next;
+ steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
+ input.left=wheelAngle < -8;input.right=wheelAngle > 8;
+});
+function releaseWheel(){wheelPointerActive=false;wheelLastPointerAngle=null;input.left=false;input.right=false;wheelAngle=THREE.MathUtils.damp(wheelAngle,0,8,1/30);steeringWheel.style.transform='rotate('+wheelAngle+'deg)';}
+steeringWheel.addEventListener('pointerup',releaseWheel);steeringWheel.addEventListener('pointercancel',releaseWheel);steeringWheel.addEventListener('lostpointercapture',()=>{if(wheelPointerActive)releaseWheel();});
+
 function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
 gearBtn?.addEventListener('click',changeGear);
