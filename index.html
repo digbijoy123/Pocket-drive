@@ -354,21 +354,22 @@ function update(dt){
  const mu=onRoad?vehicle.mu:0.48;
  const vx=speed, absVx=Math.abs(vx);
  const maxSteer=0.43/(1+absVx*0.032);
- // Front-tyre slip creates a self-aligning torque through caster/trail.
- // Increase available return torque with speed and steering angle, as a sharper loaded turn
- // should unwind decisively once the driver lets go, without snapping straight to centre.
+ // Strong caster/trail-style self-aligning torque with a clear centre bias.
+ // Tyre slip may influence the resting angle slightly, but cannot hold the wheel far off-centre.
  const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
  const frontSlipForSteering=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx));
- const slipCompensation=THREE.MathUtils.clamp(-frontSlipForSteering/maxSteer,-0.8,0.8);
- const alignTargetWheel=THREE.MathUtils.clamp(slipCompensation*450*tyreLoadBlend,-360,360);
+ const slipCompensation=THREE.MathUtils.clamp(-frontSlipForSteering/maxSteer,-0.65,0.65);
+ const alignTargetWheel=THREE.MathUtils.clamp(slipCompensation*450*tyreLoadBlend*0.28,-85,85);
  if(steeringMode==='wheel'&&!wheelPointerActive){
    const steeringLoad=Math.min(1,Math.abs(wheelAngle)/270);
-   const spring=7.0+12.0*tyreLoadBlend+3.0*steeringLoad;
-   const damping=3.0+1.8*tyreLoadBlend;
+   // More restoring torque on a larger steering angle; damping prevents oscillation, not the return itself.
+   const spring=18.0+20.0*tyreLoadBlend+10.0*steeringLoad;
+   const damping=7.0+3.0*tyreLoadBlend;
    const returnAcceleration=(alignTargetWheel-wheelAngle)*spring-wheelReturnVelocity*damping;
-   wheelReturnVelocity=THREE.MathUtils.clamp(wheelReturnVelocity+returnAcceleration*dt,-520,520);
+   wheelReturnVelocity=THREE.MathUtils.clamp(wheelReturnVelocity+returnAcceleration*dt,-900,900);
    wheelAngle=THREE.MathUtils.clamp(wheelAngle+wheelReturnVelocity*dt,-450,450);
    if(Math.abs(wheelAngle)>=450)wheelReturnVelocity=0;
+   if(Math.abs(wheelAngle)<0.6&&Math.abs(wheelReturnVelocity)<4){wheelAngle=0;wheelReturnVelocity=0;}
  }
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
