@@ -266,8 +266,8 @@ function update(dt){
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,3.8,dt);
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
- // Positive steering is right-turn for both buttons and clockwise wheel rotation.
- const steerInput=steeringMode==='wheel'?-wheelAngle/450:((input.left?1:0)-(input.right?1:0));
+ // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
+ const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
@@ -310,7 +310,7 @@ function update(dt){
  // Fade in tyre response smoothly as the car gains rolling speed.
  const lowSpeedBlend=THREE.MathUtils.smoothstep(absVx,0.8,3.0);
  const vxForTyres=Math.max(2.5,absVx)*(vx<0?-1:1);
- const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))+steeringAngle;
+ const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))-steeringAngle;
  const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,Math.max(2.5,absVx));
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
@@ -348,10 +348,13 @@ function update(dt){
  const offset=car.position.x-roadX(z);
  car.position.y=roadY(z);
  car.rotation.y=yaw;
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
- const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.45,0.45);
- const targetRoll=-lateralG*0.10;
- const targetPitch=THREE.MathUtils.clamp(-longitudinalAccel*0.008,-0.045,0.045);
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
+ const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
+ // Body roll builds with lateral acceleration (and therefore usually with speed), but remains restrained.
+ const rollScale=THREE.MathUtils.smoothstep(Math.abs(speed),2,24);
+ const targetRoll=THREE.MathUtils.clamp(-lateralG*0.085*rollScale,-0.055,0.055);
+ // Reduce pitch under braking so the hood does not jump into the hood-camera view.
+ const targetPitch=THREE.MathUtils.clamp(-longitudinalAccel*0.0025,-0.018,0.018);
  car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,3.5,dt);
  car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.0,dt);
  if(wheelAssemblies)for(const w of wheelAssemblies){
@@ -376,11 +379,17 @@ function update(dt){
  }else if(cameraMode===1){
    camPos=new THREE.Vector3(car.position.x,car.position.y+4.8,car.position.z).addScaledVector(forward,-9.5);
  }else{
-   camPos=new THREE.Vector3(car.position.x,car.position.y+1.68,car.position.z).addScaledVector(forward,0.48);
-   target.set(car.position.x,car.position.y+1.35,car.position.z).addScaledVector(forward,24);
+   camPos=car.localToWorld(new THREE.Vector3(0,1.62,0.88));
+   target=car.localToWorld(new THREE.Vector3(0,1.36,24));
  }
- if(cameraMode===2)camera.position.copy(camPos);
- else camera.position.lerp(camPos,1-Math.pow(0.002,dt));
+ if(cameraMode===2){
+   // Keep the hood camera mounted to the pitched/rolled chassis instead of letting the body move through it.
+   camera.position.copy(camPos);
+   camera.up.copy(car.localToWorld(new THREE.Vector3(0,1,0)).sub(car.position).normalize());
+ }else{
+   camera.position.lerp(camPos,1-Math.pow(0.002,dt));
+   camera.up.set(0,1,0);
+ }
  camera.lookAt(target);
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
  gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
