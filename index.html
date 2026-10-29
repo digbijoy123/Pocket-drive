@@ -234,46 +234,46 @@ document.querySelectorAll('[data-control]').forEach(el=>{
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
 
-// Real recorded CC0 vehicle effects replace the synthetic engine tone.
+// Recorded CC0 vehicle audio replaces the synthetic engine tone.
 let audioEnabled=true, audioReady=false, lastSquealAt=0, lastRevAt=0;
 const engineSound=new Audio('https://opengameart.org/sites/default/files/loop_0.wav');
 engineSound.loop=true;engineSound.preload='auto';engineSound.volume=0;
 const engineRevSound=new Audio('https://sfxmint.com/dl/car-revving-07.mp3');
-engineRevSound.preload='auto';engineRevSound.volume=0.0;
+engineRevSound.preload='auto';engineRevSound.volume=0;
 const tireSquealSound=new Audio('https://sfxmint.com/dl/race-car-07.mp3');
-tireSquealSound.preload='auto';tireSquealSound.volume=0.0;
-const roadRollSound=new Audio('https://sfxmint.com/dl/car-revving-06.mp3');
-roadRollSound.loop=true;roadRollSound.preload='auto';roadRollSound.volume=0.0;
+tireSquealSound.preload='auto';tireSquealSound.volume=0;
 function initGameAudio(){
  if(audioReady)return;
  audioReady=true;
- [engineSound,engineRevSound,tireSquealSound,roadRollSound].forEach(a=>{a.muted=!audioEnabled;});
+ [engineSound,engineRevSound,tireSquealSound].forEach(a=>a.muted=!audioEnabled);
  engineSound.play().then(()=>{engineSound.pause();engineSound.currentTime=0;}).catch(()=>{});
  syncAudioState();
 }
 function syncAudioState(){
  const b=document.getElementById('soundBtn');if(b)b.textContent=audioEnabled?'🔊 SOUND ON':'🔇 SOUND OFF';
- [engineSound,engineRevSound,tireSquealSound,roadRollSound].forEach(a=>{a.muted=!audioEnabled;});
- if(!audioEnabled){[engineSound,engineRevSound,tireSquealSound,roadRollSound].forEach(a=>{a.pause();a.currentTime=0;});}
- else if(audioReady&&started&&!paused){engineSound.play().catch(()=>{});roadRollSound.play().catch(()=>{});}
+ [engineSound,engineRevSound,tireSquealSound].forEach(a=>a.muted=!audioEnabled);
+ if(!audioEnabled){
+   [engineSound,engineRevSound,tireSquealSound].forEach(a=>{a.pause();a.currentTime=0;});
+ }else if(audioReady&&started&&!paused){
+   engineSound.play().catch(()=>{});
+ }
 }
 function updateGameAudio(){
  if(!audioReady)return;
  const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
- [engineSound,roadRollSound].forEach(a=>{a.muted=!audioEnabled;});
+ engineSound.muted=!audioEnabled;
  if(audioEnabled&&started&&!paused){
    if(engineSound.paused)engineSound.play().catch(()=>{});
-   if(roadRollSound.paused)roadRollSound.play().catch(()=>{});
-   engineSound.playbackRate=THREE.MathUtils.clamp(.72+v/28+throttle*.2,.72,1.85);
-   engineSound.volume=THREE.MathUtils.clamp(.12+v/43*.42+throttle*.12,.12,.55);
-   roadRollSound.playbackRate=THREE.MathUtils.clamp(.75+v/55,.75,1.5);
-   roadRollSound.volume=THREE.MathUtils.clamp(v/43*.12,0,.12);
- }else{
-   engineSound.volume=0;roadRollSound.volume=0;
- }
+   // A recorded engine loop is pitch-shifted gently, not treated as a synthetic RPM oscillator.
+   engineSound.playbackRate=THREE.MathUtils.clamp(.78+v/52+throttle*.12,.78,1.55);
+   engineSound.volume=THREE.MathUtils.clamp(.10+v/43*.34+throttle*.10,.10,.44);
+ }else engineSound.volume=0;
  if(!audioEnabled){engineRevSound.pause();tireSquealSound.pause();return;}
+ // Short rev burst on acceleration, rate-limited so it does not repeat constantly.
  if(throttle&&v>8&&performance.now()-lastRevAt>6500){
-   lastRevAt=performance.now();engineRevSound.currentTime=0;engineRevSound.volume=THREE.MathUtils.clamp(.12+v/43*.18,.12,.3);engineRevSound.play().catch(()=>{});
+   lastRevAt=performance.now();engineRevSound.currentTime=0;
+   engineRevSound.volume=THREE.MathUtils.clamp(.10+v/43*.14,.10,.24);
+   engineRevSound.play().catch(()=>{});
  }
 }
 let cameraMode=1; // 0 close follow, 1 far follow, 2 hood, 3 free orbit
