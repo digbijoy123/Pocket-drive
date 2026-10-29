@@ -638,8 +638,12 @@ function update(dt){
  // build toward the commanded turn; tyre saturation naturally creates understeer.
  // Use signed longitudinal velocity in the slip angle so the front tyres generate the correct yaw in reverse too.
  const signedVx=Math.abs(vx)>0.5?vx:(vx<0?-0.5:0.5);
- const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,signedVx)-steeringAngle;
- const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,signedVx);
+ const rawFrontSlip=Math.atan2(lateralSpeed+vehicle.lf*yawRate,signedVx)-steeringAngle;
+ const rawRearSlip=Math.atan2(lateralSpeed-vehicle.lr*yawRate,signedVx);
+ // Wrap slip angles to [-PI, PI]. Without this, reversing makes atan2 jump near PI,
+ // saturating the tyres and preventing the car from responding to steering.
+ const alphaFront=Math.atan2(Math.sin(rawFrontSlip),Math.cos(rawFrontSlip));
+ const alphaRear=Math.atan2(Math.sin(rawRearSlip),Math.cos(rawRearSlip));
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
