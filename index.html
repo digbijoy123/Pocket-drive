@@ -257,7 +257,7 @@ document.querySelectorAll('[data-control]').forEach(el=>{
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
 
 // Lightweight synthesized car audio: no mismatched external sound clips.
-let audioEnabled=true, audioReady=false, audioCtx=null, engineOsc1=null, engineOsc2=null, engineFilter=null, engineGain=null, engineHarmonic=null, harmonicGain=null, tireNoise=null, tireFilter=null, tireGain=null, lastSquealAt=0;
+let audioEnabled=true, audioReady=false, audioCtx=null, engineOsc1=null, engineOsc2=null, engineFilter=null, engineGain=null, engineHarmonic=null, harmonicGain=null, tireNoise=null, tireFilter=null, tireGain=null, lastSquealAt=0;\nlet autoGear=1, engineRpm=850, lastShiftAt=0, shiftKick=0;
 function initGameAudio(){
  if(audioReady)return;
  try{
@@ -285,18 +285,36 @@ function syncAudioState(){
 function updateGameAudio(){
  if(!audioReady||!audioCtx)return;
  const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
- const t=audioCtx.currentTime;
+ const t=audioCtx.currentTime, now=performance.now();
  if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.09);harmonicGain.gain.setTargetAtTime(0,t,.09);return;}
  if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
- // Lower RPM range, a subdued low-pass tone and slow response create a heavier car-like rumble.
- const rpm=Math.min(3400,850+v*58+throttle*480+(input.brake&&v>2?80:0));
- const fundamental=rpm/60*1.18;
- engineOsc1.frequency.setTargetAtTime(fundamental,t,.16);
- engineOsc2.frequency.setTargetAtTime(fundamental*.5,t,.18);
- engineFilter.frequency.setTargetAtTime(170+throttle*180+Math.min(v,35)*2.2,t,.18);
- engineHarmonic.frequency.setTargetAtTime(420+throttle*180+v*3,t,.18);
- engineGain.gain.setTargetAtTime(.055+throttle*.025+Math.min(v/45,.25)*.045,t,.16);
- harmonicGain.gain.setTargetAtTime(.0015+throttle*.002+Math.min(v/50,.2)*.003,t,.16);
+ // Automatic 5-speed transmission: RPM climbs to redline, then drops on each upshift.
+ const ratios=[0,1.00,.72,.54,.42,.34], redline=6100, idle=850;
+ if(driveMode==='D'){
+   let wheelRpm=idle+v*245;
+   engineRpm=wheelRpm*ratios[autoGear]+throttle*(autoGear===1?650:450);
+   if(throttle&&engineRpm>=redline&&now-lastShiftAt>520){
+     autoGear=Math.min(5,autoGear+1);lastShiftAt=now;shiftKick=.18;
+     engineRpm=Math.max(2600,engineRpm*.69);
+   }else if(v<1.8){autoGear=1;engineRpm=idle+throttle*450;}
+   else if(!throttle&&engineRpm<1550&&autoGear>1&&now-lastShiftAt>800){
+     autoGear--;lastShiftAt=now;shiftKick=.1;engineRpm=Math.max(1500,engineRpm*1.18);
+   }
+   engineRpm=THREE.MathUtils.clamp(engineRpm,idle,redline+250);
+ }else if(driveMode==='R'){engineRpm=idle+v*130+throttle*650;}
+ else {engineRpm=idle+throttle*180;}
+ shiftKick=Math.max(0,shiftKick-.012);
+ const rpm=engineRpm;
+ // Engine note follows RPM. Shifts create a quick pitch/volume dip before the revs build again.
+ const fundamental=(rpm/60)*1.18;
+ const pitchDrop=1-shiftKick*.32;
+ engineOsc1.frequency.setTargetAtTime(fundamental*pitchDrop,t,.045);
+ engineOsc2.frequency.setTargetAtTime(fundamental*.5*pitchDrop,t,.06);
+ engineFilter.frequency.setTargetAtTime(170+throttle*140+Math.min(rpm/6100,1)*240,t,.08);
+ engineHarmonic.frequency.setTargetAtTime(420+Math.min(rpm/6100,1)*240,t,.08);
+ const nearRedline=THREE.MathUtils.clamp((rpm-4700)/1400,0,1);
+ engineGain.gain.setTargetAtTime(.052+throttle*.018+nearRedline*.012-shiftKick*.025,t,.035);
+ harmonicGain.gain.setTargetAtTime(.0015+nearRedline*.004-shiftKick*.001,t,.04);
 }
 function playTireSqueal(){
  if(!audioEnabled||!audioCtx||!started||paused)return;
@@ -581,7 +599,7 @@ if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
  camera.lookAt(target);
  updateGameAudio();
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
- gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
+ gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D1 · IDLE':'D'+autoGear+' · DRIVE');
 }
 function loop(now){const dt=Math.min(.035,(now-last)/1000||0);last=now;update(dt);renderer.render(scene,camera);requestAnimationFrame(loop)}
 camera.position.set(car.position.x,5,car.position.z-11);camera.lookAt(car.position.x,1,car.position.z+3);requestAnimationFrame(loop);
