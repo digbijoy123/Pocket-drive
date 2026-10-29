@@ -84,7 +84,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
     <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
-    <div class="actions"><button class="btn" id="cameraBtn" aria-label="Change camera view">CAM: FAR</button><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
+    <div class="actions"><button class="btn" id="cameraBtn" aria-label="Change camera view">CAM: FAR</button><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="soundBtn" aria-label="Toggle game audio">🔊 SOUND ON</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
   </div>
 </div>
 <div class="mobile-controls">
@@ -233,6 +233,60 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
+
+// Lightweight procedural vehicle audio; it follows speed and throttle without a large audio download.
+let audioCtx=null, engineOscA=null, engineOscB=null, engineGain=null, engineFilter=null;
+let roadNoiseSource=null, roadNoiseGain=null, roadNoiseFilter=null, musicGain=null;
+let audioEnabled=true, audioReady=false, lastSquealAt=0;
+const tireSquealSound=new Audio('https://sfxmint.com/dl/race-car-07.mp3');
+tireSquealSound.preload='auto';tireSquealSound.volume=0;
+function initGameAudio(){
+ if(audioReady)return;
+ const AC=window.AudioContext||window.webkitAudioContext;
+ if(!AC){showToast('Audio is not supported in this browser');return;}
+ audioCtx=new AC();
+ engineOscA=audioCtx.createOscillator();engineOscB=audioCtx.createOscillator();
+ engineFilter=audioCtx.createBiquadFilter();engineFilter.type='lowpass';engineFilter.frequency.value=520;
+ engineGain=audioCtx.createGain();engineGain.gain.value=0;
+ engineOscA.type='sawtooth';engineOscB.type='triangle';
+ engineOscA.frequency.value=48;engineOscB.frequency.value=24;
+ engineOscA.connect(engineFilter);engineOscB.connect(engineFilter);engineFilter.connect(engineGain);engineGain.connect(audioCtx.destination);
+ const buffer=audioCtx.createBuffer(1,audioCtx.sampleRate*2,audioCtx.sampleRate);
+ const data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
+ roadNoiseSource=audioCtx.createBufferSource();roadNoiseSource.buffer=buffer;roadNoiseSource.loop=true;
+ roadNoiseFilter=audioCtx.createBiquadFilter();roadNoiseFilter.type='lowpass';roadNoiseFilter.frequency.value=380;
+ roadNoiseGain=audioCtx.createGain();roadNoiseGain.gain.value=0;
+ roadNoiseSource.connect(roadNoiseFilter);roadNoiseFilter.connect(roadNoiseGain);roadNoiseGain.connect(audioCtx.destination);roadNoiseSource.start();
+ // A subtle, original ambient pad made from soft tones rather than a copyrighted song.
+ musicGain=audioCtx.createGain();musicGain.gain.value=0.012;musicGain.connect(audioCtx.destination);
+ [110,164.81,220].forEach((hz,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=hz;g.gain.value=[0.32,0.16,0.11][i];o.connect(g);g.connect(musicGain);o.start();});
+ audioReady=true;syncAudioState();
+}
+function syncAudioState(){
+ const b=document.getElementById('soundBtn');if(b)b.textContent=audioEnabled?'🔊 SOUND ON':'🔇 SOUND OFF';
+ if(audioCtx&&audioCtx.state==='suspended'&&audioEnabled)audioCtx.resume().catch(()=>{});
+ if(engineGain&&audioCtx)engineGain.gain.setTargetAtTime(audioEnabled?0.12:0,audioCtx.currentTime,.08);
+ if(roadNoiseGain&&audioCtx)roadNoiseGain.gain.setTargetAtTime(audioEnabled?0.035:0,audioCtx.currentTime,.12);
+ if(musicGain&&audioCtx)musicGain.gain.setTargetAtTime(audioEnabled?0.012:0,audioCtx.currentTime,.3);
+ tireSquealSound.muted=!audioEnabled;
+}
+function updateGameAudio(){
+ if(!audioReady||!audioCtx)return;
+ if(audioCtx.state==='suspended'&&audioEnabled)audioCtx.resume().catch(()=>{});
+ const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
+ const rpm=42+v*4.2+throttle*24+(driveMode==='R'?8:0);
+ engineOscA.frequency.setTargetAtTime(rpm,audioCtx.currentTime,.06);
+ engineOscB.frequency.setTargetAtTime(rpm*.49,audioCtx.currentTime,.06);
+ engineFilter.frequency.setTargetAtTime(260+v*26+throttle*500,audioCtx.currentTime,.08);
+ engineGain.gain.setTargetAtTime(audioEnabled?(0.035+Math.min(v/43,.7)*.105+throttle*.025):0,audioCtx.currentTime,.09);
+ roadNoiseFilter.frequency.setTargetAtTime(220+v*22,audioCtx.currentTime,.12);
+ roadNoiseGain.gain.setTargetAtTime(audioEnabled?Math.min(.09,v/43*.075):0,audioCtx.currentTime,.15);
+ if(!audioEnabled){tireSquealSound.pause();tireSquealSound.currentTime=0;}
+}
+document.getElementById('soundBtn').addEventListener('click',()=>{
+ audioEnabled=!audioEnabled;if(audioEnabled)initGameAudio();syncAudioState();
+ showToast(audioEnabled?'GAME AUDIO ON':'GAME AUDIO MUTED');
+});
 let cameraMode=1; // 0 close follow, 1 far follow, 2 hood, 3 free orbit
 let freeCamYaw=0, freeCamPitch=0.22, freeCamDistance=10, freeCamPointerId=null, freeCamLastX=0, freeCamLastY=0;
 const speedEl=document.getElementById('speed'), gearEl=document.getElementById('gear'), toast=document.getElementById('toast');
@@ -339,7 +393,7 @@ fullscreenBtn.addEventListener('click',async()=>{
  syncFullscreenButton();
 });
 document.addEventListener('fullscreenchange',syncFullscreenButton);
-document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
+document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;initGameAudio();syncAudioState();yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
@@ -450,6 +504,13 @@ function update(dt){
  car.rotation.y=yaw;
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
+// Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
+const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
+const nowAudio=performance.now();
+if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
+ lastSquealAt=nowAudio;
+ try{tireSquealSound.currentTime=0;tireSquealSound.volume=THREE.MathUtils.clamp(.18+Math.abs(lateralG)*.35,.18,.42);tireSquealSound.play().catch(()=>{});}catch{}
+}
  // Body roll builds with lateral acceleration (and therefore usually with speed), but remains restrained.
  const rollScale=THREE.MathUtils.smoothstep(Math.abs(speed),2,24);
  const targetRoll=THREE.MathUtils.clamp(-lateralG*0.085*rollScale,-0.055,0.055);
@@ -496,6 +557,7 @@ function update(dt){
    camera.up.set(0,1,0);
  }
  camera.lookAt(target);
+ updateGameAudio();
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
  gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
 }
