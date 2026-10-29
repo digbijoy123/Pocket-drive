@@ -170,7 +170,7 @@ car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
 let driveMode="D"; // D = forward, N = neutral, R = reverse
-let steeringMode="buttons", wheelAngle=0, wheelPointerActive=false;
+let steeringMode="buttons", wheelAngle=0, wheelReturnVelocity=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
 addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
 addEventListener('keyup',e=>{if(keyMap[e.key])input[keyMap[e.key]]=false});
@@ -187,7 +187,7 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 const cameraBtn=document.getElementById('cameraBtn');
@@ -235,7 +235,7 @@ function setSteeringMode(mode){
  document.getElementById('buttonSteeringBtn').style.outline=mode==='buttons'?'2px solid #9cff57':'none';
  document.getElementById('wheelSteeringBtn').style.outline=mode==='wheel'?'2px solid #9cff57':'none';
  steeringModeNote.textContent='Steering mode: '+(mode==='wheel'?'steering wheel':'left/right buttons');
- input.left=false;input.right=false;wheelAngle=0;steeringWheel.style.transform='rotate(0deg)';
+ input.left=false;input.right=false;wheelAngle=0;wheelReturnVelocity=0;steeringWheel.style.transform='rotate(0deg)';
  showToast('Steering: '+(mode==='wheel'?'wheel':'buttons'));
 }
 document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
@@ -302,15 +302,19 @@ function update(dt){
  const mu=onRoad?vehicle.mu:0.48;
  const vx=speed, absVx=Math.abs(vx);
  const maxSteer=0.43/(1+absVx*0.032);
- // Model caster/trail self-aligning torque: once the driver releases the wheel,
- // the front tyres pull the steering toward the angle that reduces front slip.
- // The effect is weak while parking and stronger as the tyres build lateral force.
+ // Front-tyre slip creates a self-aligning torque through caster/trail.
+ // Treat the steering wheel as a damped, inertial system instead of snapping it to a target.
+ const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
  const frontSlipForSteering=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx));
- const alignTargetWheel=THREE.MathUtils.clamp((-frontSlipForSteering/maxSteer)*450,-450,450);
+ const slipCompensation=THREE.MathUtils.clamp(-frontSlipForSteering/maxSteer,-0.8,0.8);
+ const alignTargetWheel=THREE.MathUtils.clamp(slipCompensation*450*tyreLoadBlend,-360,360);
  if(steeringMode==='wheel'&&!wheelPointerActive){
-   const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
-   const alignRate=0.65+2.25*tyreLoadBlend;
-   wheelAngle=THREE.MathUtils.damp(wheelAngle,alignTargetWheel,alignRate,dt);
+   const spring=4.5+8.5*tyreLoadBlend;
+   const damping=3.8+2.0*tyreLoadBlend;
+   const returnAcceleration=(alignTargetWheel-wheelAngle)*spring-wheelReturnVelocity*damping;
+   wheelReturnVelocity=THREE.MathUtils.clamp(wheelReturnVelocity+returnAcceleration*dt,-300,300);
+   wheelAngle=THREE.MathUtils.clamp(wheelAngle+wheelReturnVelocity*dt,-450,450);
+   if(Math.abs(wheelAngle)>=450)wheelReturnVelocity=0;
  }
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
