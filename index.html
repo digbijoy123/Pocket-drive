@@ -233,7 +233,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <div class="menu-buttons">
       <button class="btn menu-play" id="startBtn"><span>▶</span> PLAY</button>
       <button class="btn menu-settings" id="mainSettingsBtn"><span>⚙</span> SETTINGS</button>
-      <button class="btn menu-settings" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button>
+      
     </div>
     <div class="menu-footer">HILLSIDE RUN <span>•</span> VERSION 1.0</div>
   </div>
@@ -541,22 +541,23 @@ function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h 
 gearBtn?.addEventListener('click',changeGear);
 document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>{const next=el.dataset.gear;if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}if(next==='N')speed=0;driveMode=next;document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));syncGearButton();showToast('GEAR '+driveMode);}));
 // Pause is opened through the on-screen settings button.
-const fullscreenBtn=document.getElementById('fullscreenBtn');
-function syncFullscreenButton(){
- const active=!!document.fullscreenElement;
- fullscreenBtn.textContent=active?'⛶ EXIT FULLSCREEN':'⛶ FULLSCREEN';
- fullscreenBtn.setAttribute('aria-label',active?'Exit fullscreen':'Enter fullscreen');
-}
-fullscreenBtn.addEventListener('click',async()=>{
+// PLAY requests immersive fullscreen directly from the user's tap, then starts immediately.
+document.getElementById('startBtn').addEventListener('click',async()=>{
+ const startScreen=document.getElementById('startScreen');
  try{
-   if(document.fullscreenElement){await document.exitFullscreen();}
-   else if(document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen();}
-   else {showToast('Fullscreen is not supported in this browser');return;}
- }catch(err){showToast('Use your browser menu → Add to Home screen for an immersive view');}
- syncFullscreenButton();
+   if(!document.fullscreenElement&&document.documentElement.requestFullscreen){
+     await document.documentElement.requestFullscreen();
+   }
+   if(screen.orientation&&screen.orientation.lock){
+     try{await screen.orientation.lock('landscape');}catch(_){}
+   }
+ }catch(_){
+   showToast('Starting game · use browser menu for fullscreen if needed');
+ }
+ started=true;paused=false;initGameAudio();syncAudioState();
+ yaw=roadHeading(trackZ());car.rotation.y=yaw;
+ startScreen.style.display='none';last=performance.now();
 });
-document.addEventListener('fullscreenchange',syncFullscreenButton);
-document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;initGameAudio();syncAudioState();yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
