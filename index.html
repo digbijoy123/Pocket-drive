@@ -322,7 +322,7 @@ function tree(x,y,z,s=1){
   for(let i=0;i<3;i++){const cone=new THREE.Mesh(new THREE.ConeGeometry((1.05-i*.19)*s,1.55*s,5),leafMats[(Math.random()*leafMats.length)|0]);cone.position.y=(1.5+i*.64)*s;g.add(cone);}
   g.position.set(x,y,z);scene.add(g);
 }
-for(let z=0;z<trackLength;z+=4){
+for(let z=0;z<trackLength;z+=7){
   const cx=roadX(z), zz=z-trackLength/2;
   const villageZone=z>950&&z<1160;
   for(const side of [-1,1]){
