@@ -296,16 +296,25 @@ function update(dt){
    cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
    wheelRadius:.31,rearBrakeTorque:1450};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
- if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,3.8,dt);
- if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
- // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
- const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
  const mu=onRoad?vehicle.mu:0.48;
  const vx=speed, absVx=Math.abs(vx);
  const maxSteer=0.43/(1+absVx*0.032);
+ // Model caster/trail self-aligning torque: once the driver releases the wheel,
+ // the front tyres pull the steering toward the angle that reduces front slip.
+ // The effect is weak while parking and stronger as the tyres build lateral force.
+ const frontSlipForSteering=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx));
+ const alignTargetWheel=THREE.MathUtils.clamp((-frontSlipForSteering/maxSteer)*450,-450,450);
+ if(steeringMode==='wheel'&&!wheelPointerActive){
+   const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
+   const alignRate=0.65+2.25*tyreLoadBlend;
+   wheelAngle=THREE.MathUtils.damp(wheelAngle,alignTargetWheel,alignRate,dt);
+ }
+ if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
+ // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
+ const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,3.2,dt);
 
  // Longitudinal force balance.
