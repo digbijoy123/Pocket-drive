@@ -513,14 +513,15 @@ function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
- const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
-   cf:62000,cr:68000,mu:0.92,engineForce:sportsMode?5600:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
-   wheelRadius:.31,rearBrakeTorque:4200};
+ // Sports mode switches to a lighter, high-torque rally setup with stronger brakes and grip.
+ const vehicle={mass:sportsMode?1120:1200,iz:sportsMode?1650:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:sportsMode?0.48:0.52,
+   cf:sportsMode?70000:62000,cr:sportsMode?72000:68000,mu:sportsMode?1.04:0.92,engineForce:sportsMode?8200:3500,brakeForce:sportsMode?10200:8500,cdA:sportsMode?0.62:0.68,airDensity:1.225,rolling:170,
+   wheelRadius:.31,rearBrakeTorque:sportsMode?4800:4200};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
- const mu=onRoad?vehicle.mu:0.48;
+ const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
  const vx=speed, absVx=Math.abs(vx);
  const maxSteer=0.43/(1+absVx*0.032);
  // Strong caster/trail-style self-aligning torque with a clear centre bias.
@@ -548,7 +549,7 @@ function update(dt){
 
  // Longitudinal force balance.
  let driveForce=0;
- if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/(sportsMode?58:43),0.12,1)*(handbrake?0.3:1);
+ if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/(sportsMode?64:43),sportsMode?0.18:0.12,1)*(handbrake?0.3:1);
  else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
  else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-1500*THREE.MathUtils.clamp(1-absVx/5.5,0.12,1);
  else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*2.5;
@@ -562,7 +563,7 @@ function update(dt){
  const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce-Math.sign(vx)*rearBrakeForce)/vehicle.mass;
  speed+=longitudinalAccel*dt;
  if(Math.abs(speed)<0.08&&(!throttle||handbrake))speed=0;
- speed=THREE.MathUtils.clamp(speed,-5.5,sportsMode?58:43);
+ speed=THREE.MathUtils.clamp(speed,-5.5,sportsMode?64:43);
  if(driveMode==='R')speed=Math.max(speed,-5.5);
  if(driveMode==='D')speed=Math.max(speed,0);
  if(driveMode==='N'&&Math.abs(speed)<0.15)speed=0;
