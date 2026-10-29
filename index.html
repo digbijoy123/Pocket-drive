@@ -133,10 +133,8 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="panel">
     <div class="eyebrow">DRIVING PREFERENCES</div>
     <h1>Settings</h1>
-    <p>Choose your steering style and vehicle performance. Sports mode increases acceleration, top speed, grip and braking.</p>
+    <p>Choose how you want to steer. Your accelerator, brake, handbrake and gear controls remain available.</p>
     <div class="settings-actions"><button class="btn" id="buttonSteeringBtn">‹ › BUTTONS</button><button class="btn" id="wheelSteeringBtn">◉ WHEEL</button></div>
-    <div class="settings-actions"><button class="btn" id="driveModeBtn">🏁 NORMAL MODE</button></div>
-    <p class="settings-note" id="driveModeNote">Normal: balanced everyday handling</p>
     <p class="settings-note" id="steeringModeNote">Steering mode: buttons</p>
     <button class="btn" id="closeSettingsBtn">DONE</button>
   </div>
@@ -246,8 +244,6 @@ car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
 let driveMode="D"; // D = forward, N = neutral, R = reverse
-let sportMode=false;
-function syncDriveModeUI(){const b=document.getElementById('driveModeBtn'),n=document.getElementById('driveModeNote');if(b)b.textContent=sportMode?'🏎 SPORTS MODE ON':'🏁 NORMAL MODE';if(n)n.textContent=sportMode?'Sports: stronger acceleration, higher top speed, sharper grip and brakes':'Normal: balanced everyday handling';}
 let steeringMode="buttons", wheelAngle=0, wheelReturnVelocity=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
 addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
@@ -390,8 +386,6 @@ function setSteeringMode(mode){
 document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('mainSettingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
-document.getElementById('driveModeBtn').addEventListener('click',()=>{sportMode=!sportMode;syncDriveModeUI();showToast(sportMode?'SPORTS MODE · EXTRA POWER':'NORMAL MODE');});
-syncDriveModeUI();
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
 let wheelPointerId=null,wheelLastPointerAngle=0;
@@ -444,8 +438,8 @@ function update(dt){
  if(paused)return;
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
- const vehicle={mass:sportMode?1120:1200,iz:sportMode?1650:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
-   cf:sportMode?76000:62000,cr:sportMode?82000:68000,mu:sportMode?1.08:0.92,engineForce:sportMode?6100:3500,brakeForce:sportMode?10800:8500,cdA:sportMode?0.58:0.68,airDensity:1.225,rolling:sportMode?145:170,
+ const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
+   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
    wheelRadius:.31,rearBrakeTorque:1450};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
@@ -478,7 +472,7 @@ function update(dt){
 
  // Longitudinal force balance.
  let driveForce=0;
- if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/(sportMode?61:43),0.12,1);
+ if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/43,0.12,1);
  else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
  else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-1500*THREE.MathUtils.clamp(1-absVx/5.5,0.12,1);
  else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*2.5;
