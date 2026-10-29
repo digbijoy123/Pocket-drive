@@ -523,7 +523,8 @@ function update(dt){
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
  const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
  const vx=speed, absVx=Math.abs(vx);
- const maxSteer=0.43/(1+absVx*0.032);
+ // Progressive steering ratio: quick around centre, calmer at speed to avoid twitchiness.
+ const maxSteer=(sportsMode?0.46:0.43)/(1+absVx*(sportsMode?0.029:0.032));
  // Strong caster/trail-style self-aligning torque with a clear centre bias.
  // Tyre slip may influence the resting angle slightly, but cannot hold the wheel far off-centre.
  const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
@@ -545,7 +546,9 @@ function update(dt){
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
  const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
- steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,3.2,dt);
+ // Faster steering rack response with a speed-sensitive rate limit.
+ const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
+ steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
 
  // Longitudinal force balance.
  let driveForce=0;
@@ -582,18 +585,25 @@ function update(dt){
  // Fade in tyre response smoothly as the car gains rolling speed.
  const lowSpeedBlend=THREE.MathUtils.smoothstep(absVx,0.8,3.0);
  const vxForTyres=Math.max(2.5,absVx)*(vx<0?-1:1);
- const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))+steeringAngle;
+ // Bicycle-model tyre slip angles. Correct steering sign makes front lateral force
+ // build toward the commanded turn; tyre saturation naturally creates understeer.
+ const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))-steeringAngle;
  const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,Math.max(2.5,absVx));
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
- let frontFy=-vehicle.cf*alphaFront*lowSpeedBlend;
- let rearFy=-vehicle.cr*alphaRear*lowSpeedBlend;
  const frontLimit=mu*frontLoad;
+ // Rear grip falls as the rear wheels lock or slide, allowing controllable oversteer.
  const rearMu=mu*(1-rearLock);
  const rearLimit=rearMu*rearLoad;
- frontFy=THREE.MathUtils.clamp(frontFy,-frontLimit,frontLimit);
- rearFy=THREE.MathUtils.clamp(rearFy,-rearLimit,rearLimit);
+ // Smooth tyre-force saturation avoids the abrupt feel of a hard force clamp.
+ let frontFy=-frontLimit*Math.tanh(vehicle.cf*alphaFront/Math.max(1,frontLimit))*lowSpeedBlend;
+ let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;
+ // Combined-slip approximation: braking/drive consumes some of each axle's lateral grip.
+ const frontLongUse=THREE.MathUtils.clamp(Math.abs(brakeForce)/Math.max(1,frontLimit),0,0.75);
+ const rearLongUse=THREE.MathUtils.clamp((Math.abs(brakeForce)*0.55+Math.abs(driveForce)*0.30+rearBrakeForce)/Math.max(1,rearLimit),0,0.92);
+ frontFy*=Math.sqrt(1-frontLongUse*frontLongUse);
+ rearFy*=Math.sqrt(1-rearLongUse*rearLongUse);
  const lateralAccel=(frontFy*Math.cos(steeringAngle)+rearFy)/vehicle.mass-lateralSpeed*yawRate;
  const motionDirection=speed< -0.15?-1:1;
  const yawAccel=motionDirection*(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
