@@ -180,12 +180,12 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const up=e=>{e.preventDefault();input[name]=false;el.classList.remove('active')};
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
-let speed=0, yaw=0, lateralSpeed=0, steeringAngle=0, paused=true, started=false, last=performance.now();
+let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, paused=true, started=false, last=performance.now();
 const speedEl=document.getElementById('speed'), gearEl=document.getElementById('gear'), toast=document.getElementById('toast');
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;yawRate=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 const gearBtn=document.getElementById('gearBtn');
@@ -263,7 +263,7 @@ function update(dt){
  if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,3.8,dt);
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Conventional input mapping: right input/clockwise wheel rotation steers the car right.
- const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
+ const steerInput=steeringMode==='wheel'?-wheelAngle/450:((input.left?1:0)-(input.right?1:0));
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
