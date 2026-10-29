@@ -133,8 +133,10 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="panel">
     <div class="eyebrow">DRIVING PREFERENCES</div>
     <h1>Settings</h1>
-    <p>Choose how you want to steer. Your accelerator, brake, handbrake and gear controls remain available.</p>
+    <p>Choose your steering style and vehicle performance. Sports mode increases acceleration, top speed, grip and braking.</p>
     <div class="settings-actions"><button class="btn" id="buttonSteeringBtn">‹ › BUTTONS</button><button class="btn" id="wheelSteeringBtn">◉ WHEEL</button></div>
+    <div class="settings-actions"><button class="btn" id="driveModeBtn">🏁 NORMAL MODE</button></div>
+    <p class="settings-note" id="driveModeNote">Normal: balanced everyday handling</p>
     <p class="settings-note" id="steeringModeNote">Steering mode: buttons</p>
     <button class="btn" id="closeSettingsBtn">DONE</button>
   </div>
@@ -244,6 +246,8 @@ car.position.set(roadX(10),roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
 let driveMode="D"; // D = forward, N = neutral, R = reverse
+let sportMode=false;
+function syncDriveModeUI(){const b=document.getElementById('driveModeBtn'),n=document.getElementById('driveModeNote');if(b)b.textContent=sportMode?'🏎 SPORTS MODE ON':'🏁 NORMAL MODE';if(n)n.textContent=sportMode?'Sports: stronger acceleration, higher top speed, sharper grip and brakes':'Normal: balanced everyday handling';}
 let steeringMode="buttons", wheelAngle=0, wheelReturnVelocity=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
 addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
@@ -386,6 +390,8 @@ function setSteeringMode(mode){
 document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('mainSettingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
+document.getElementById('driveModeBtn').addEventListener('click',()=>{sportMode=!sportMode;syncDriveModeUI();showToast(sportMode?'SPORTS MODE · EXTRA POWER':'NORMAL MODE');});
+syncDriveModeUI();
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
 let wheelPointerId=null,wheelLastPointerAngle=0;
