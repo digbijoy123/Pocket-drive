@@ -265,12 +265,12 @@ function initGameAudio(){
   audioCtx=new AC();
   engineOsc1=audioCtx.createOscillator();engineOsc1.type='sawtooth';
   engineOsc2=audioCtx.createOscillator();engineOsc2.type='triangle';
-  engineFilter=audioCtx.createBiquadFilter();engineFilter.type='lowpass';engineFilter.frequency.value=420;engineFilter.Q.value=.7;
+  engineFilter=audioCtx.createBiquadFilter();engineFilter.type='lowpass';engineFilter.frequency.value=210;engineFilter.Q.value=.55;
   engineGain=audioCtx.createGain();engineGain.gain.value=0;
   engineHarmonic=audioCtx.createBiquadFilter();engineHarmonic.type='lowpass';engineHarmonic.frequency.value=1000;
   harmonicGain=audioCtx.createGain();harmonicGain.gain.value=.0;
   engineOsc1.connect(engineFilter);engineOsc2.connect(engineFilter);engineFilter.connect(engineGain);engineGain.connect(audioCtx.destination);
-  engineOsc1.connect(engineHarmonic);engineHarmonic.connect(harmonicGain);harmonicGain.connect(audioCtx.destination);
+  // Keep the bright harmonic layer barely audible; loud upper harmonics sounded like a superbike.
   engineOsc1.start();engineOsc2.start();
   audioReady=true;
  }catch(e){console.warn('Game audio unavailable',e);}
@@ -286,17 +286,17 @@ function updateGameAudio(){
  if(!audioReady||!audioCtx)return;
  const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
  const t=audioCtx.currentTime;
- if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.07);harmonicGain.gain.setTargetAtTime(0,t,.07);return;}
+ if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.09);harmonicGain.gain.setTargetAtTime(0,t,.09);return;}
  if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
- // RPM follows engine load and vehicle speed, with a little idle fluctuation.
- const rpm= Math.max(850, 850+v*115+throttle*1150+(input.brake&&v>2?180:0));
- const fundamental=rpm/60*2.15;
- engineOsc1.frequency.setTargetAtTime(fundamental,t,.055);
- engineOsc2.frequency.setTargetAtTime(fundamental*1.01,t,.055);
- engineFilter.frequency.setTargetAtTime(260+throttle*650+v*10,t,.08);
- engineHarmonic.frequency.setTargetAtTime(700+throttle*1000+v*14,t,.08);
- engineGain.gain.setTargetAtTime(audioEnabled?(.035+throttle*.045+Math.min(v/45,.25)*.07):0,t,.09);
- harmonicGain.gain.setTargetAtTime(audioEnabled?(.008+throttle*.018+Math.min(v/50,.2)*.025):0,t,.09);
+ // Lower RPM range, a subdued low-pass tone and slow response create a heavier car-like rumble.
+ const rpm=Math.min(3400,850+v*58+throttle*480+(input.brake&&v>2?80:0));
+ const fundamental=rpm/60*1.18;
+ engineOsc1.frequency.setTargetAtTime(fundamental,t,.16);
+ engineOsc2.frequency.setTargetAtTime(fundamental*.5,t,.18);
+ engineFilter.frequency.setTargetAtTime(170+throttle*180+Math.min(v,35)*2.2,t,.18);
+ engineHarmonic.frequency.setTargetAtTime(420+throttle*180+v*3,t,.18);
+ engineGain.gain.setTargetAtTime(.055+throttle*.025+Math.min(v/45,.25)*.045,t,.16);
+ harmonicGain.gain.setTargetAtTime(.0015+throttle*.002+Math.min(v/50,.2)*.003,t,.16);
 }
 function playTireSqueal(){
  if(!audioEnabled||!audioCtx||!started||paused)return;
