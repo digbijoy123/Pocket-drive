@@ -545,7 +545,7 @@ function update(dt){
  }
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
- const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
+ const steerInput=steeringMode==='wheel'?-wheelAngle/450:((input.left?1:0)-(input.right?1:0));
  // Faster steering rack response with a speed-sensitive rate limit.
  const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
@@ -587,8 +587,10 @@ function update(dt){
  const vxForTyres=Math.max(2.5,absVx)*(vx<0?-1:1);
  // Bicycle-model tyre slip angles. Correct steering sign makes front lateral force
  // build toward the commanded turn; tyre saturation naturally creates understeer.
- const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,Math.max(2.5,absVx))-steeringAngle;
- const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,Math.max(2.5,absVx));
+ // Use signed longitudinal velocity in the slip angle so the front tyres generate the correct yaw in reverse too.
+ const signedVx=Math.abs(vx)>0.5?vx:(vx<0?-0.5:0.5);
+ const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,signedVx)-steeringAngle;
+ const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,signedVx);
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
@@ -605,8 +607,7 @@ function update(dt){
  frontFy*=Math.sqrt(1-frontLongUse*frontLongUse);
  rearFy*=Math.sqrt(1-rearLongUse*rearLongUse);
  const lateralAccel=(frontFy*Math.cos(steeringAngle)+rearFy)/vehicle.mass-lateralSpeed*yawRate;
- const motionDirection=speed< -0.15?-1:1;
- const yawAccel=motionDirection*(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
+ const yawAccel=(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
  lateralSpeed+=lateralAccel*dt;
  yawRate+=yawAccel*dt;
  // Tyre damping is modest on tarmac; grass has lower lateral grip and stronger damping.
@@ -631,7 +632,7 @@ function update(dt){
  car.position.y=roadY(z);
  car.rotation.y=yaw;
  // Front tyre visuals must point the same way as the steering rack in both D and R.
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
