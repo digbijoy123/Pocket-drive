@@ -308,6 +308,54 @@ for(let i=0;i<12;i++){
  const g=new THREE.Group();for(let j=0;j<4;j++){const puff=new THREE.Mesh(new THREE.SphereGeometry(2.5+Math.random()*2,7,5),cloudMat);puff.position.set(j*2.5,Math.random(),0);g.add(puff);}
  g.position.set((Math.random()-.5)*220,27+Math.random()*18,Math.random()*260-80);scene.add(g);
 }
+// Small roadside fuel stop and forecourt. The paved apron physically joins the road edge.
+const fuelStop=new THREE.Group();scene.add(fuelStop);
+const stationZ=10, stationWorldZ=stationZ-trackLength/2;
+const stationRoadX=roadX(stationZ), stationY=roadY(stationZ);
+const asphaltMat=mat(0x51575b), concreteMat=mat(0xb8b9b2), canopyMat=mat(0xf1f0e8), fuelRedMat=mat(0xd84635), fuelBlueMat=mat(0x2679ad), signMat=mat(0x153b2b), glassShopMat=mat(0x75a7ad);
+function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+ m.position.set(x,y,z);parent.add(m);return m;
+}
+// Coordinates are relative to the road centre, so the station follows this road section.
+const stationGroup=new THREE.Group();stationGroup.position.set(stationRoadX,stationY,stationWorldZ);fuelStop.add(stationGroup);
+// Wide paved lot and a long tapered-looking connector apron from the road shoulder.
+stationBox(23,.12,25,concreteMat,16.5,.02,0,stationGroup);
+stationBox(13,.10,18,asphaltMat,8.2,.01,0,stationGroup);
+// painted forecourt edge and entrance guides
+for(const z of [-10.5,10.5]){
+ stationBox(14,.035,.16,white,9,.095,z,stationGroup);
+}
+stationBox(13,.025,.16,yellowMat,8,.09,-7.5,stationGroup);
+// compact shop building at the back of the lot
+stationBox(7,3.2,6,white,23,1.65,-5.5,stationGroup);
+stationBox(7.15,.28,6.15,redMat,23,3.35,-5.5,stationGroup);
+stationBox(3.8,1.65,.10,glassShopMat,23,1.85,-2.43,stationGroup);
+stationBox(1.3,1.2,.13,dark,25.1,1.65,-2.35,stationGroup);
+// flat canopy with four support pillars
+stationBox(10,.28,9,canopyMat,12.5,4.1,1.2,stationGroup);
+stationBox(10.2,.12,9.2,redMat,12.5,3.91,1.2,stationGroup);
+for(const x of [8.2,16.8])for(const z of [-2.2,4.6])stationBox(.18,3.8,.18,white,x,1.95,z,stationGroup);
+// two fuel pumps, each with a bright display and hose-like dark side strip
+for(const [x,colorMat] of [[10.1,fuelRedMat],[14.3,fuelBlueMat]]){
+ stationBox(1.05,1.65,.85,colorMat,x,1.0,1.1,stationGroup);
+ stationBox(.72,.42,.06,dark,x,1.25,1.54,stationGroup);
+ stationBox(.18,.72,.12,tireMat,x+.52,.95,1.12,stationGroup);
+ stationBox(.1,.55,.1,white,x+.55,.92,.92,stationGroup);
+}
+// roadside sign with a simple readable FUEL panel
+stationBox(.22,3.4,.22,dark,27,1.7,5.8,stationGroup);
+stationBox(3.6,1.65,.28,signMat,27,3.35,5.8,stationGroup);
+stationBox(3.2,.12,.06,yellowMat,27,3.72,5.64,stationGroup);
+function stationText(textValue,x,y,z,size,color){
+ const c=document.createElement('canvas');c.width=512;c.height=160;
+ const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+ ctx.fillStyle=color;ctx.font='bold 94px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(textValue,256,82);
+ const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
+ const mesh=new THREE.Mesh(new THREE.PlaneGeometry(size,size*.31),new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide}));
+ mesh.position.set(x,y,z);stationGroup.add(mesh);
+}
+stationText('FUEL',27,3.35,5.63,3.0,'#ffffff');
 // stylized car model
 const car=new THREE.Group();scene.add(car);
 const body=new THREE.Mesh(new THREE.BoxGeometry(2.05,.72,4.0),redMat);body.position.y=.82;car.add(body);
@@ -327,7 +375,7 @@ for(const x of [-.68,.68]){
  const tail=new THREE.Mesh(new THREE.BoxGeometry(.3,.18,.07),redMat);tail.position.set(x,.88,-2.02);car.add(tail);
 }
 const shadow=new THREE.Mesh(new THREE.CircleGeometry(1.7,16),new THREE.MeshBasicMaterial({color:0x1e3440,transparent:true,opacity:.2}));shadow.rotation.x=-Math.PI/2;shadow.scale.set(1,1.55,1);shadow.position.y=.02;car.add(shadow);
-car.position.set(roadX(10),roadY(10), -trackLength/2+10);
+car.position.set(roadX(10)+7.2,roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
 let sportsMode=false;
@@ -405,7 +453,7 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
 document.getElementById('resetBtn').addEventListener('click',()=>{reset();settingsPanel.classList.remove('open');if(started)paused=false;});
 const cameraBtn=document.getElementById('cameraBtn');
@@ -520,7 +568,8 @@ function update(dt){
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
- const onRoad=Math.abs(roadOffset)<roadWidth/2;
+ const inFuelForecourt=Math.abs(trackZ()-stationZ)<13&&roadOffset>5&&roadOffset<28;
+ const onRoad=Math.abs(roadOffset)<roadWidth/2||inFuelForecourt;
  const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
  const vx=speed, absVx=Math.abs(vx);
  // Progressive steering ratio: quick around centre, calmer at speed to avoid twitchiness.
