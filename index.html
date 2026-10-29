@@ -72,6 +72,25 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   .pedal.utility{width:clamp(56px,15vw,78px);font-size:9px}
 }
 
+
+/* Main menu */
+.main-menu{background:linear-gradient(110deg,rgba(7,17,28,.76),rgba(7,17,28,.2) 65%,rgba(7,17,28,.45));}
+.menu-panel{width:min(470px,100%);padding:clamp(24px,6vw,38px);background:linear-gradient(145deg,rgba(10,22,34,.92),rgba(15,29,39,.76));border-color:#ffffff30;box-shadow:0 28px 90px #07111f66;position:relative;overflow:hidden;}
+.menu-panel:before{content:"";position:absolute;width:240px;height:240px;border-radius:50%;right:-115px;top:-130px;border:1px solid #9cff5733;box-shadow:0 0 0 22px #9cff5710,0 0 0 48px #9cff5708;pointer-events:none;}
+.menu-logo{font-size:clamp(48px,12vw,76px);font-weight:950;line-height:.76;letter-spacing:-.085em;margin:28px 0 22px;text-shadow:0 8px 35px #0005;}
+.menu-logo span{color:var(--accent);}
+.menu-logo sup{font-size:.2em;letter-spacing:.12em;margin-left:8px;color:#c5d2dd;vertical-align:top;}
+.menu-tagline{font-size:14px!important;color:#d2dde7!important;margin:0 0 26px!important;letter-spacing:.02em;}
+.menu-buttons{display:grid;gap:10px;margin-top:12px;}
+.menu-buttons .btn{width:100%;margin:0;display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 18px;border-radius:14px;font-size:14px;letter-spacing:.1em;}
+.menu-play{background:var(--accent)!important;color:#13200d!important;box-shadow:0 8px 28px #9cff5725;}
+.menu-play span{font-size:12px;}
+.menu-settings{background:#ffffff0b!important;border:1px solid #ffffff2b!important;color:#f5f7fb!important;}
+.menu-settings span{font-size:17px;}
+.menu-footer{margin-top:28px;color:#8fa2b4;font-size:9px;font-weight:700;letter-spacing:.18em;display:flex;gap:9px;align-items:center;}
+.menu-footer span{color:var(--accent);}
+@media(max-width:520px){.menu-panel{border-radius:22px}.menu-logo{margin-top:24px}.menu-footer{margin-top:23px}}
+
 </style>
 </head>
 <body>
@@ -120,13 +139,16 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <button class="btn" id="closeSettingsBtn">DONE</button>
   </div>
 </div>
-<div class="overlay" id="startScreen">
-  <div class="panel">
-    <div class="eyebrow">A SMALL WORLD. AN OPEN ROAD.</div>
-    <h1>Take the<br>long way.</h1>
-    <p>Explore a bright, low-poly hillside road. Build speed on the straights, ease off for the bends, and keep the car on the tarmac.</p>
-    <div class="keyline"><span class="key">W / ↑ ACCELERATE</span><span class="key">S / ↓ BRAKE</span><span class="key">A D / ← → STEER</span></div>
-    <button class="btn" id="startBtn">START DRIVING →</button>
+<div class="overlay main-menu" id="startScreen">
+  <div class="panel menu-panel">
+    <div class="eyebrow">OPEN ROAD · FREE DRIVE</div>
+    <div class="menu-logo">POCKET<br><span>DRIVE</span><sup>3D</sup></div>
+    <p class="menu-tagline">Find your road. Feel the drive.</p>
+    <div class="menu-buttons">
+      <button class="btn menu-play" id="startBtn"><span>▶</span> PLAY</button>
+      <button class="btn menu-settings" id="mainSettingsBtn"><span>⚙</span> SETTINGS</button>
+    </div>
+    <div class="menu-footer">HILLSIDE RUN <span>•</span> VERSION 1.0</div>
   </div>
 </div>
 <script type="module">
@@ -334,6 +356,7 @@ function setSteeringMode(mode){
  showToast('Steering: '+(mode==='wheel'?'wheel':'buttons'));
 }
 document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
+document.getElementById('mainSettingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
