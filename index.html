@@ -681,7 +681,7 @@ function update(dt){
  car.position.y=roadY(z);
  car.rotation.y=yaw;
  // Front tyre visuals must point the same way as the steering rack in both D and R.
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=-steeringAngle;
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
