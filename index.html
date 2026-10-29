@@ -256,47 +256,57 @@ document.querySelectorAll('[data-control]').forEach(el=>{
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
 
-// Recorded CC0 vehicle audio replaces the synthetic engine tone.
-let audioEnabled=true, audioReady=false, lastSquealAt=0, lastRevAt=0;
-const engineSound=new Audio('https://opengameart.org/sites/default/files/loop_0.wav');
-engineSound.loop=true;engineSound.preload='auto';engineSound.volume=0;
-const engineRevSound=new Audio('https://sfxmint.com/dl/car-revving-07.mp3');
-engineRevSound.preload='auto';engineRevSound.volume=0;
-const tireSquealSound=new Audio('https://sfxmint.com/dl/race-car-07.mp3');
-tireSquealSound.preload='auto';tireSquealSound.volume=0;
+// Lightweight synthesized car audio: no mismatched external sound clips.
+let audioEnabled=true, audioReady=false, audioCtx=null, engineOsc1=null, engineOsc2=null, engineFilter=null, engineGain=null, engineHarmonic=null, harmonicGain=null, tireNoise=null, tireFilter=null, tireGain=null, lastSquealAt=0;
 function initGameAudio(){
  if(audioReady)return;
- audioReady=true;
- [engineSound,engineRevSound,tireSquealSound].forEach(a=>a.muted=!audioEnabled);
- engineSound.play().then(()=>{engineSound.pause();engineSound.currentTime=0;}).catch(()=>{});
+ try{
+  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+  audioCtx=new AC();
+  engineOsc1=audioCtx.createOscillator();engineOsc1.type='sawtooth';
+  engineOsc2=audioCtx.createOscillator();engineOsc2.type='triangle';
+  engineFilter=audioCtx.createBiquadFilter();engineFilter.type='lowpass';engineFilter.frequency.value=420;engineFilter.Q.value=.7;
+  engineGain=audioCtx.createGain();engineGain.gain.value=0;
+  engineHarmonic=audioCtx.createBiquadFilter();engineHarmonic.type='lowpass';engineHarmonic.frequency.value=1000;
+  harmonicGain=audioCtx.createGain();harmonicGain.gain.value=.0;
+  engineOsc1.connect(engineFilter);engineOsc2.connect(engineFilter);engineFilter.connect(engineGain);engineGain.connect(audioCtx.destination);
+  engineOsc1.connect(engineHarmonic);engineHarmonic.connect(harmonicGain);harmonicGain.connect(audioCtx.destination);
+  engineOsc1.start();engineOsc2.start();
+  audioReady=true;
+ }catch(e){console.warn('Game audio unavailable',e);}
  syncAudioState();
 }
 function syncAudioState(){
  const b=document.getElementById('soundBtn');if(b)b.textContent=audioEnabled?'🔊 SOUND ON':'🔇 SOUND OFF';
- [engineSound,engineRevSound,tireSquealSound].forEach(a=>a.muted=!audioEnabled);
- if(!audioEnabled){
-   [engineSound,engineRevSound,tireSquealSound].forEach(a=>{a.pause();a.currentTime=0;});
- }else if(audioReady&&started&&!paused){
-   engineSound.play().catch(()=>{});
- }
+ if(!audioCtx)return;
+ if(audioEnabled&&started&&!paused)audioCtx.resume().catch(()=>{});
+ else {engineGain.gain.setTargetAtTime(0,audioCtx.currentTime,.08);harmonicGain.gain.setTargetAtTime(0,audioCtx.currentTime,.08);}
 }
 function updateGameAudio(){
- if(!audioReady)return;
+ if(!audioReady||!audioCtx)return;
  const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
- engineSound.muted=!audioEnabled;
- if(audioEnabled&&started&&!paused){
-   if(engineSound.paused)engineSound.play().catch(()=>{});
-   // A recorded engine loop is pitch-shifted gently, not treated as a synthetic RPM oscillator.
-   engineSound.playbackRate=THREE.MathUtils.clamp(.78+v/52+throttle*.12,.78,1.55);
-   engineSound.volume=THREE.MathUtils.clamp(.10+v/43*.34+throttle*.10,.10,.44);
- }else engineSound.volume=0;
- if(!audioEnabled){engineRevSound.pause();tireSquealSound.pause();return;}
- // Short rev burst on acceleration, rate-limited so it does not repeat constantly.
- if(throttle&&v>8&&performance.now()-lastRevAt>6500){
-   lastRevAt=performance.now();engineRevSound.currentTime=0;
-   engineRevSound.volume=THREE.MathUtils.clamp(.10+v/43*.14,.10,.24);
-   engineRevSound.play().catch(()=>{});
- }
+ const t=audioCtx.currentTime;
+ if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.07);harmonicGain.gain.setTargetAtTime(0,t,.07);return;}
+ if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+ // RPM follows engine load and vehicle speed, with a little idle fluctuation.
+ const rpm= Math.max(850, 850+v*115+throttle*1150+(input.brake&&v>2?180:0));
+ const fundamental=rpm/60*2.15;
+ engineOsc1.frequency.setTargetAtTime(fundamental,t,.055);
+ engineOsc2.frequency.setTargetAtTime(fundamental*1.01,t,.055);
+ engineFilter.frequency.setTargetAtTime(260+throttle*650+v*10,t,.08);
+ engineHarmonic.frequency.setTargetAtTime(700+throttle*1000+v*14,t,.08);
+ engineGain.gain.setTargetAtTime(audioEnabled?(.035+throttle*.045+Math.min(v/45,.25)*.07):0,t,.09);
+ harmonicGain.gain.setTargetAtTime(audioEnabled?(.008+throttle*.018+Math.min(v/50,.2)*.025):0,t,.09);
+}
+function playTireSqueal(){
+ if(!audioEnabled||!audioCtx||!started||paused)return;
+ try{
+  const t=audioCtx.currentTime, osc=audioCtx.createOscillator(), gain=audioCtx.createGain(), filter=audioCtx.createBiquadFilter();
+  osc.type='sawtooth';osc.frequency.setValueAtTime(1250+Math.random()*250,t);osc.frequency.linearRampToValueAtTime(1750+Math.random()*300,t+.18);
+  filter.type='bandpass';filter.frequency.value=1550;filter.Q.value=1.2;
+  gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(.018,t+.045);gain.gain.setTargetAtTime(0,t+.2,.13);
+  osc.connect(filter);filter.connect(gain);gain.connect(audioCtx.destination);osc.start(t);osc.stop(t+.7);
+ }catch(e){}
 }
 let cameraMode=1; // 0 close follow, 1 far follow, 2 hood, 3 free orbit
 let freeCamYaw=0, freeCamPitch=0.22, freeCamDistance=10, freeCamPointerId=null, freeCamLastX=0, freeCamLastY=0;
@@ -521,7 +531,7 @@ const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpe
 const nowAudio=performance.now();
 if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
  lastSquealAt=nowAudio;
- try{tireSquealSound.currentTime=0;tireSquealSound.volume=THREE.MathUtils.clamp(.18+Math.abs(lateralG)*.35,.18,.42);tireSquealSound.play().catch(()=>{});}catch{}
+ playTireSqueal()
 }
  // Body roll builds with lateral acceleration (and therefore usually with speed), but remains restrained.
  const rollScale=THREE.MathUtils.smoothstep(Math.abs(speed),2,24);
