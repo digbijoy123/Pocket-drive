@@ -14,7 +14,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 .brand{padding:11px 14px;border-radius:15px}.brand strong{display:block;font-size:13px;letter-spacing:.15em}.brand span{font-size:10px;color:var(--muted);letter-spacing:.12em}
 .speedbox{min-width:112px;text-align:right;padding:10px 14px;border-radius:15px}.speed{font-size:clamp(26px,5vw,40px);font-weight:800;line-height:1}.unit{font-size:10px;letter-spacing:.18em;color:var(--muted)}.gear{font-size:11px;color:var(--accent);margin-top:5px}
 .center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;text-shadow:0 2px 8px #19334855;font-size:12px;letter-spacing:.12em;color:#fff;opacity:.8}
-.bottom{display:flex;justify-content:space-between;align-items:end;gap:12px}.hint{pointer-events:none;padding:9px 12px;border-radius:12px;font-size:11px;color:#d6e2ed;max-width:55%}.actions{pointer-events:auto;display:flex;gap:8px}.btn{color:#fff;border-radius:12px;padding:10px 13px;font-weight:700;font-size:12px;cursor:pointer;touch-action:manipulation}.btn:active{transform:scale(.97)}
+.bottom{display:flex;justify-content:space-between;align-items:end;gap:12px}.hint{pointer-events:none;padding:9px 12px;border-radius:12px;font-size:11px;color:#d6e2ed;max-width:55%}.actions{pointer-events:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:72%}.btn{color:#fff;border-radius:12px;padding:10px 13px;font-weight:700;font-size:12px;cursor:pointer;touch-action:manipulation}.btn:active{transform:scale(.97)}
 .mobile-controls{position:fixed;inset:auto 0 18px;display:none;align-items:end;justify-content:space-between;padding:0 18px;pointer-events:none;gap:14px}
 .steering{display:flex;gap:9px;pointer-events:auto}.pedals{display:flex;gap:9px;pointer-events:auto}.steering-wheel-wrap{display:none;pointer-events:auto;align-items:center;justify-content:center;width:clamp(120px,31vw,170px);height:clamp(120px,31vw,170px);touch-action:none}.steering-wheel{width:100%;height:100%;border:clamp(8px,2vw,12px) solid #dce6ee;border-radius:50%;background:radial-gradient(circle,#34495a 0 16%,#172532 17% 35%,transparent 36%),linear-gradient(135deg,#657888,#172532 55%,#4d6070);box-shadow:0 8px 25px #0006,inset 0 0 0 4px #0a121b;position:relative;touch-action:none;transform:rotate(0deg)}.steering-wheel:before{content:"";position:absolute;width:12%;height:43%;background:#dce6ee;border-radius:8px;left:44%;top:8%;transform-origin:50% 100%;box-shadow:0 0 0 2px #293744}.steering-wheel:after{content:"";position:absolute;width:70%;height:10%;background:#dce6ee;border-radius:8px;left:15%;top:44%;box-shadow:0 0 0 2px #293744}.wheel-hub{position:absolute;z-index:1;width:27%;height:27%;left:36.5%;top:36.5%;border-radius:50%;background:#283a49;border:3px solid #aab8c8;display:grid;place-items:center;font-size:10px;font-weight:900;letter-spacing:.04em}.overlay.settings-panel{display:none}.overlay.settings-panel.open{display:flex}.settings-actions{display:flex;gap:8px}.settings-actions .btn{flex:1}.settings-note{font-size:12px!important;color:#b6c5d3!important}.mobile-controls.wheel-mode .steering{display:none}.mobile-controls.wheel-mode .steering-wheel-wrap{display:flex}
 .steer,.pedal{width:clamp(62px,17vw,86px);height:clamp(62px,17vw,86px);border-radius:50%;display:grid;place-items:center;color:white;font-size:26px;font-weight:800;user-select:none;-webkit-user-select:none;touch-action:none}
@@ -40,7 +40,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
     <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
-    <div class="actions"><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
+    <div class="actions"><button class="btn" id="cameraBtn" aria-label="Change camera view">CAM: FAR</button><button class="btn" id="settingsBtn" aria-label="Settings">⚙ SETTINGS</button><button class="btn" id="fullscreenBtn" aria-label="Enter fullscreen">⛶ FULLSCREEN</button><button class="btn" id="resetBtn">↻ RESET</button><button class="btn" id="pauseBtn">Ⅱ PAUSE</button></div>
   </div>
 </div>
 <div class="mobile-controls">
@@ -180,14 +180,18 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const up=e=>{e.preventDefault();input[name]=false;el.classList.remove('active')};
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
-let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, paused=true, started=false, last=performance.now();
+let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
+let cameraMode=1; // 0 close follow, 1 far follow, 2 hood
 const speedEl=document.getElementById('speed'), gearEl=document.getElementById('gear'), toast=document.getElementById('toast');
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;yawRate=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
+const cameraBtn=document.getElementById('cameraBtn');
+function cycleCamera(){cameraMode=(cameraMode+1)%3;const labels=['CAM: CLOSE','CAM: FAR','CAM: HOOD'];cameraBtn.textContent=labels[cameraMode];cameraBtn.setAttribute('aria-label','Camera view: '+labels[cameraMode].replace('CAM: ',''));showToast(labels[cameraMode].replace('CAM: ','')+' CAMERA');}
+cameraBtn.addEventListener('click',cycleCamera);
 const gearBtn=document.getElementById('gearBtn');
 const mobileControls=document.querySelector('.mobile-controls');
 const settingsPanel=document.getElementById('settingsPanel');
@@ -254,28 +258,25 @@ document.addEventListener('fullscreenchange',syncFullscreenButton);
 document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
- // Dynamic single-track vehicle model: body-frame longitudinal/lateral velocity, yaw rate,
- // axle cornering forces, friction-limited tyres, longitudinal forces and load transfer.
- // Vehicle constants are representative of a small 1,200 kg road car, not a measured specific car.
- const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,frontTrack:1.48,rearTrack:1.46,
-   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170};
- const throttle=input.gas&&driveMode!=='N'?1:0,braking=input.brake?1:0,handbrake=input.handbrake?1:0;
+ // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
+ // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
+ const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,
+   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170,
+   wheelRadius:.31,rearBrakeTorque:1450};
+ const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,3.8,dt);
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
- // Conventional input mapping: right input/clockwise wheel rotation steers the car right.
- const steerInput=steeringMode==='wheel'?-wheelAngle/450:((input.left?1:0)-(input.right?1:0));
+ // Positive steering is right-turn for both buttons and clockwise wheel rotation.
+ const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
  const mu=onRoad?vehicle.mu:0.38;
- const vx=speed;
- const absVx=Math.abs(vx);
- // A realistic passenger-car steering range with progressive reduction at speed.
- const maxSteer=0.52/(1+absVx*0.028);
- const steerTarget=steerInput*maxSteer;
- steeringAngle=THREE.MathUtils.damp(steeringAngle,steerTarget,4.0,dt);
+ const vx=speed, absVx=Math.abs(vx);
+ const maxSteer=0.43/(1+absVx*0.032);
+ steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,3.2,dt);
 
- // Longitudinal force balance: engine, brakes, rolling resistance and aerodynamic drag.
+ // Longitudinal force balance.
  let driveForce=0;
  if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/43,0.12,1);
  else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
@@ -284,9 +285,11 @@ function update(dt){
  const aeroForce=0.5*vehicle.airDensity*vehicle.cdA*vx*absVx;
  const rollingForce=absVx>0.15?vehicle.rolling*Math.sign(vx):0;
  let brakeForce=0;
- if(braking&&absVx>0.02)brakeForce=-Math.sign(vx)*(handbrake?vehicle.mass*2.0:vehicle.brakeForce);
+ if(braking&&absVx>0.02)brakeForce=-Math.sign(vx)*vehicle.brakeForce;
+ // Handbrake acts on the rear axle only, not as an artificial sideways impulse.
+ const rearBrakeForce=handbrake&&absVx>0.02?Math.min(vehicle.mass*3.6,vehicle.rearBrakeTorque/vehicle.wheelRadius*2):0;
  if(driveMode==='N')driveForce=0;
- const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce)/vehicle.mass;
+ const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce-Math.sign(vx)*rearBrakeForce)/vehicle.mass;
  speed+=longitudinalAccel*dt;
  if(Math.abs(speed)<0.08&&!throttle)speed=0;
  speed=THREE.MathUtils.clamp(speed,-5.5,43);
@@ -294,31 +297,40 @@ function update(dt){
  if(driveMode==='D')speed=Math.max(speed,0);
  if(driveMode==='N'&&Math.abs(speed)<0.15)speed=0;
 
- // Dynamic bicycle tyre model. Slip angles create lateral tyre force; forces saturate at mu*load.
- // At very low speed, use a kinematic transition to prevent division-by-zero and parked steering.
- const vy=lateralSpeed, yawRateNow=yawRate;
- const vxForTyres=Math.max(2.0,Math.abs(speed))*(speed<0?-1:1);
- const alphaFront=Math.atan2(vy+vehicle.lf*yawRateNow,vxForTyres)-steeringAngle;
- const alphaRear=Math.atan2(vy-vehicle.lr*yawRateNow,vxForTyres);
- const staticFrontLoad=vehicle.mass*9.81*vehicle.lr/vehicle.wheelbase;
- const staticRearLoad=vehicle.mass*9.81*vehicle.lf/vehicle.wheelbase;
- const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.28,0.28);
+ // Rear wheel angular velocity decays under handbrake torque. Lock ratio reduces rear
+ // lateral capacity gradually, rather than instantly making the car drift.
+ const freeRearOmega=speed/vehicle.wheelRadius;
+ const rearBrakeAngularDecel=vehicle.rearBrakeTorque/0.9;
+ if(handbrake)rearWheelOmega=THREE.MathUtils.damp(rearWheelOmega,0,Math.min(30,rearBrakeAngularDecel/Math.max(1,Math.abs(freeRearOmega))),dt);
+ else rearWheelOmega=THREE.MathUtils.damp(rearWheelOmega,freeRearOmega,10,dt);
+ const wheelSlipRatio=absVx>1?Math.abs(vehicle.wheelRadius*rearWheelOmega-vx)/absVx:0;
+ const rearLock=handbrake?THREE.MathUtils.clamp(wheelSlipRatio*1.8,0,0.78):0;
+ 
+ // Tyre forces are disabled at standstill, preventing steering input from moving the parked car.
+ // Fade in tyre response smoothly as the car gains rolling speed.
+ const lowSpeedBlend=THREE.MathUtils.smoothstep(absVx,0.8,3.0);
+ const vxForTyres=Math.max(2.5,absVx)*(vx<0?-1:1);
+ const alphaFront=Math.atan2(lateralSpeed+vehicle.lf*yawRate,vxForTyres)-steeringAngle;
+ const alphaRear=Math.atan2(lateralSpeed-vehicle.lr*yawRate,vxForTyres);
+ const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
- let frontFy=-vehicle.cf*alphaFront;
- let rearFy=-vehicle.cr*alphaRear;
- // A handbrake locks the rear axle more readily; no artificial drift impulse is added.
- const rearMu=handbrake?0.48:mu;
- frontFy=THREE.MathUtils.clamp(frontFy,-mu*frontLoad,mu*frontLoad);
- rearFy=THREE.MathUtils.clamp(rearFy,-rearMu*rearLoad,rearMu*rearLoad);
- const lateralAccel=(frontFy*Math.cos(steeringAngle)+rearFy)/vehicle.mass-vy*yawRateNow/Math.max(2,absVx);
+ let frontFy=-vehicle.cf*alphaFront*lowSpeedBlend;
+ let rearFy=-vehicle.cr*alphaRear*lowSpeedBlend;
+ const frontLimit=mu*frontLoad;
+ const rearMu=mu*(1-rearLock);
+ const rearLimit=rearMu*rearLoad;
+ frontFy=THREE.MathUtils.clamp(frontFy,-frontLimit,frontLimit);
+ rearFy=THREE.MathUtils.clamp(rearFy,-rearLimit,rearLimit);
+ const lateralAccel=(frontFy*Math.cos(steeringAngle)+rearFy)/vehicle.mass-lateralSpeed*yawRate;
  const yawAccel=(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
  lateralSpeed+=lateralAccel*dt;
  yawRate+=yawAccel*dt;
- lateralSpeed*=Math.exp(-(onRoad?0.10:0.9)*dt);
- yawRate=THREE.MathUtils.clamp(yawRate,-1.5,1.5);
- if(absVx<0.4){lateralSpeed*=Math.exp(-2.0*dt);yawRate*=Math.exp(-2.8*dt);}
- // Body-frame velocities are integrated into world coordinates. Yaw is the heading angle.
+ // Tyre damping is modest on tarmac; grass has lower lateral grip and stronger damping.
+ lateralSpeed*=Math.exp(-(onRoad?0.28:1.2)*dt);
+ yawRate*=Math.exp(-0.10*dt);
+ yawRate=THREE.MathUtils.clamp(yawRate,-1.2,1.2);
+ if(absVx<0.8){lateralSpeed*=Math.exp(-4*dt);yawRate*=Math.exp(-5*dt);}
  yaw+=yawRate*dt;
  car.position.x+=(Math.sin(yaw)*speed+Math.cos(yaw)*lateralSpeed)*dt;
  car.position.z+=(Math.cos(yaw)*speed-Math.sin(yaw)*lateralSpeed)*dt;
@@ -335,15 +347,12 @@ function update(dt){
  const offset=car.position.x-roadX(z);
  car.position.y=roadY(z);
  car.rotation.y=yaw;
- // Visible front wheel steer and simple suspension/weight-transfer cues.
- const frontWheelSteer=steeringAngle;
- if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=frontWheelSteer;
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.45,0.45);
- const targetRoll=-lateralG*0.12;
+ const targetRoll=-lateralG*0.10;
  const targetPitch=THREE.MathUtils.clamp(-longitudinalAccel*0.008,-0.045,0.045);
  car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,3.5,dt);
  car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.0,dt);
- // Suspension compression is visual-only: braking compresses the front, acceleration the rear.
  if(wheelAssemblies)for(const w of wheelAssemblies){
    const isFront=w.userData.axle==='front';
    const targetY=0.48+(isFront?-targetPitch:targetPitch)*1.7;
@@ -356,11 +365,21 @@ function update(dt){
    speed*=Math.max(0,1-offroadDrag*dt);
    lateralSpeed*=Math.exp(-1.5*dt);
  }
+
+ // Camera presets: close chase, the original farther chase, and a hood-mounted view.
  const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
- const camTarget=new THREE.Vector3(car.position.x,car.position.y+1.5,car.position.z).addScaledVector(forward,3.0);
- const camPos=new THREE.Vector3(car.position.x,car.position.y+4.8,car.position.z).addScaledVector(forward,-9.5);
+ const target=new THREE.Vector3(car.position.x,car.position.y+1.15,car.position.z).addScaledVector(forward,cameraMode===2?18:2.5);
+ let camPos;
+ if(cameraMode===0){
+   camPos=new THREE.Vector3(car.position.x,car.position.y+2.9,car.position.z).addScaledVector(forward,-5.4);
+ }else if(cameraMode===1){
+   camPos=new THREE.Vector3(car.position.x,car.position.y+4.8,car.position.z).addScaledVector(forward,-9.5);
+ }else{
+   camPos=new THREE.Vector3(car.position.x,car.position.y+1.55,car.position.z).addScaledVector(forward,1.55);
+   target.set(car.position.x,car.position.y+1.35,car.position.z).addScaledVector(forward,22);
+ }
  camera.position.lerp(camPos,1-Math.pow(0.002,dt));
- camera.lookAt(camTarget);
+ camera.lookAt(target);
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
  gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
 }
