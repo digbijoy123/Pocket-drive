@@ -154,9 +154,12 @@ const hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,.23,1.12),redMat);hood.posit
 const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.52,.72,1.7),yellowMat);cabin.position.set(0,1.42,-.25);car.add(cabin);
 const windshield=new THREE.Mesh(new THREE.BoxGeometry(1.38,.48,.08),glassMat);windshield.position.set(0,1.48,.62);windshield.rotation.x=-.15;car.add(windshield);
 const rearGlass=new THREE.Mesh(new THREE.BoxGeometry(1.35,.45,.08),glassMat);rearGlass.position.set(0,1.47,-1.08);rearGlass.rotation.x=.12;car.add(rearGlass);
+const wheelAssemblies=[],frontWheelMeshes=[];
 for(const x of [-1,1]) for(const z of [-1.25,1.28]){
- const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;wheel.position.set(x*1.02,.48,z);car.add(wheel);
- const hub=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.255,8),white);hub.rotation.z=Math.PI/2;hub.position.set(x*1.02,.48,z);car.add(hub);
+ const assembly=new THREE.Group();assembly.position.set(x*1.02,.48,z);assembly.userData.axle=z>0?'front':'rear';car.add(assembly);wheelAssemblies.push(assembly);
+ const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;assembly.add(wheel);
+ const hub=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.255,8),white);hub.rotation.z=Math.PI/2;assembly.add(hub);
+ if(z>0)frontWheelMeshes.push(assembly);
 }
 for(const x of [-.68,.68]){
  const lamp=new THREE.Mesh(new THREE.BoxGeometry(.34,.18,.07),white);lamp.position.set(x,.91,2.02);car.add(lamp);
@@ -203,21 +206,31 @@ document.getElementById('settingsBtn').addEventListener('click',()=>settingsPane
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
-let wheelDragStartX=0,wheelDragStartAngle=0;
+let wheelPointerId=null,wheelLastPointerAngle=0;
+function pointerWheelAngle(e){
+ const rect=steeringWheel.getBoundingClientRect();
+ return Math.atan2(e.clientY-(rect.top+rect.height/2),e.clientX-(rect.left+rect.width/2))*180/Math.PI;
+}
+function wrapAngle(deg){while(deg>180)deg-=360;while(deg< -180)deg+=360;return deg;}
 steeringWheel.addEventListener('pointerdown',e=>{
- e.preventDefault();wheelPointerActive=true;wheelDragStartX=e.clientX;wheelDragStartAngle=wheelAngle;
+ e.preventDefault();wheelPointerActive=true;wheelPointerId=e.pointerId;
+ wheelLastPointerAngle=pointerWheelAngle(e);
  try{steeringWheel.setPointerCapture(e.pointerId)}catch{}
 });
 steeringWheel.addEventListener('pointermove',e=>{
- if(!wheelPointerActive)return;e.preventDefault();
- // Horizontal drag maps smoothly to wheel rotation; no angle-wrap jumps near the wheel's centre.
- wheelAngle=THREE.MathUtils.clamp(wheelDragStartAngle+(e.clientX-wheelDragStartX)*1.65,-160,160);
+ if(!wheelPointerActive||e.pointerId!==wheelPointerId)return;
+ e.preventDefault();
+ // Track the actual polar angle of the finger around the wheel centre, including across the +/-180° seam.
+ const current=pointerWheelAngle(e);
+ const delta=wrapAngle(current-wheelLastPointerAngle);
+ wheelAngle=THREE.MathUtils.clamp(wheelAngle+delta,-450,450);
+ wheelLastPointerAngle=current;
  steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
 });
-function releaseWheel(){wheelPointerActive=false;}
+function releaseWheel(e){if(e&&wheelPointerId!==null&&e.pointerId!==wheelPointerId)return;wheelPointerActive=false;wheelPointerId=null;}
 steeringWheel.addEventListener('pointerup',releaseWheel);
 steeringWheel.addEventListener('pointercancel',releaseWheel);
-steeringWheel.addEventListener('lostpointercapture',()=>{wheelPointerActive=false;});
+steeringWheel.addEventListener('lostpointercapture',()=>{wheelPointerActive=false;wheelPointerId=null;});
 
 function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
@@ -241,75 +254,79 @@ document.addEventListener('fullscreenchange',syncFullscreenButton);
 document.getElementById('startBtn').addEventListener('click',()=>{started=true;paused=false;yaw=roadHeading(trackZ());car.rotation.y=yaw;document.getElementById('startScreen').style.display='none';last=performance.now()});
 function update(dt){
  if(paused)return;
- // Lightweight vehicle-dynamics model. Speed is m/s; steering changes front-wheel angle,
- // while tyre grip controls how quickly lateral slip builds and settles.
- const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
- if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,5.5,dt);
+ // Dynamic single-track vehicle model: body-frame longitudinal/lateral velocity, yaw rate,
+ // axle cornering forces, friction-limited tyres, longitudinal forces and load transfer.
+ // Vehicle constants are representative of a small 1,200 kg road car, not a measured specific car.
+ const vehicle={mass:1200,iz:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:.52,frontTrack:1.48,rearTrack:1.46,
+   cf:62000,cr:68000,mu:0.92,engineForce:3500,brakeForce:8500,cdA:.68,airDensity:1.225,rolling:170};
+ const throttle=input.gas&&driveMode!=='N'?1:0,braking=input.brake?1:0,handbrake=input.handbrake?1:0;
+ if(steeringMode==='wheel'&&!wheelPointerActive)wheelAngle=THREE.MathUtils.damp(wheelAngle,0,3.8,dt);
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
- const steerInput=steeringMode==='wheel'?wheelAngle/160:((input.right?1:0)-(input.left?1:0));
- const zNow=THREE.MathUtils.clamp(trackZ(),0,trackLength);
- const roadOffset=car.position.x-roadX(zNow);
+ // Conventional input mapping: right input/clockwise wheel rotation steers the car right.
+ const steerInput=steeringMode==='wheel'?wheelAngle/450:((input.right?1:0)-(input.left?1:0));
+ const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
+ const roadOffset=car.position.x-roadX(zForRoad);
  const onRoad=Math.abs(roadOffset)<roadWidth/2;
- const surfaceGrip=onRoad?1:0.52;
-
- // Speed-sensitive steering limits high-speed twitchiness; the front wheels also turn at a
- // finite rate instead of instantly snapping to the requested angle.
- const maxSteer=0.58/(1+Math.abs(speed)*0.045);
+ const mu=onRoad?vehicle.mu:0.38;
+ const vx=speed;
+ const absVx=Math.abs(vx);
+ // A realistic passenger-car steering range with progressive reduction at speed.
+ const maxSteer=0.52/(1+absVx*0.028);
  const steerTarget=steerInput*maxSteer;
- steeringAngle=THREE.MathUtils.damp(steeringAngle,steerTarget,5.5,dt);
+ steeringAngle=THREE.MathUtils.damp(steeringAngle,steerTarget,4.0,dt);
 
- // Powertrain: strong low-speed pull, progressively less acceleration at high speed.
- // D and R are mutually exclusive; brake input never instantly flips the direction of travel.
- const absSpeed=Math.abs(speed);
- if(throttle&&driveMode==='D'){
-   if(speed<0) speed=Math.min(0,speed+10*dt);
-   else speed+=Math.max(1.5,5.8*(1-absSpeed/39))*dt;
- } else if(throttle&&driveMode==='R'){
-   if(speed>0) speed=Math.max(0,speed-10*dt);
-   else speed-=Math.max(1.2,3.1*(1-absSpeed/7))*dt;
- }
- if(braking){
-   const brakeDecel=handbrake?5.5:9.5;
-   if(Math.abs(speed)>0.15) speed-=Math.sign(speed)*Math.min(Math.abs(speed),brakeDecel*dt);
-   else speed=0;
-   // In reverse, throttle selects reverse motion; brake alone remains a brake.
- }
- // Handbrake is a separate rear-axle lock, useful for deliberate low-speed slides.
- if(handbrake&&!braking&&Math.abs(speed)>0.05){
-   speed-=Math.sign(speed)*Math.min(Math.abs(speed),4.2*dt);
- }
- // Rolling resistance and quadratic aerodynamic drag; avoid drag changing the sign at rest.
- const drag=(0.12+0.012*absSpeed+0.00065*absSpeed*absSpeed)*dt;
- if(Math.abs(speed)>0.03)speed-=Math.sign(speed)*Math.min(Math.abs(speed),drag);
- else if(!throttle)speed=0;
- speed=THREE.MathUtils.clamp(speed,-6.5,36);
- if(driveMode==='N'&&Math.abs(speed)<0.25)speed=0;
+ // Longitudinal force balance: engine, brakes, rolling resistance and aerodynamic drag.
+ let driveForce=0;
+ if(throttle&&driveMode==='D'&&vx>=0)driveForce=vehicle.engineForce*THREE.MathUtils.clamp(1-absVx/43,0.12,1);
+ else if(throttle&&driveMode==='D'&&vx<0)driveForce=vehicle.mass*3.0;
+ else if(throttle&&driveMode==='R'&&vx<=0)driveForce=-1500*THREE.MathUtils.clamp(1-absVx/5.5,0.12,1);
+ else if(throttle&&driveMode==='R'&&vx>0)driveForce=-vehicle.mass*2.5;
+ const aeroForce=0.5*vehicle.airDensity*vehicle.cdA*vx*absVx;
+ const rollingForce=absVx>0.15?vehicle.rolling*Math.sign(vx):0;
+ let brakeForce=0;
+ if(braking&&absVx>0.02)brakeForce=-Math.sign(vx)*(handbrake?vehicle.mass*2.0:vehicle.brakeForce);
+ if(driveMode==='N')driveForce=0;
+ const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce)/vehicle.mass;
+ speed+=longitudinalAccel*dt;
+ if(Math.abs(speed)<0.08&&!throttle)speed=0;
+ speed=THREE.MathUtils.clamp(speed,-5.5,43);
+ if(driveMode==='R')speed=Math.max(speed,-5.5);
+ if(driveMode==='D')speed=Math.max(speed,0);
+ if(driveMode==='N'&&Math.abs(speed)<0.15)speed=0;
 
- // Bicycle-model yaw rate with a mild tyre-grip limit. Low speed means less yaw response;
- // reversing naturally reverses the steering response.
- const wheelbase=2.65;
- const rawYawRate=(speed/wheelbase)*Math.tan(steeringAngle);
- const gripLimit=(handbrake?0.58:surfaceGrip)*Math.max(0.55,1-Math.max(0,absSpeed-24)*0.012);
- const yawRate=THREE.MathUtils.clamp(rawYawRate,-2.1*gripLimit,2.1*gripLimit);
+ // Dynamic bicycle tyre model. Slip angles create lateral tyre force; forces saturate at mu*load.
+ // At very low speed, use a kinematic transition to prevent division-by-zero and parked steering.
+ const vy=lateralSpeed, yawRateNow=yawRate;
+ const vxForTyres=Math.max(2.0,Math.abs(speed))*(speed<0?-1:1);
+ const alphaFront=Math.atan2(vy+vehicle.lf*yawRateNow,vxForTyres)-steeringAngle;
+ const alphaRear=Math.atan2(vy-vehicle.lr*yawRateNow,vxForTyres);
+ const staticFrontLoad=vehicle.mass*9.81*vehicle.lr/vehicle.wheelbase;
+ const staticRearLoad=vehicle.mass*9.81*vehicle.lf/vehicle.wheelbase;
+ const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.28,0.28);
+ const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
+ const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
+ let frontFy=-vehicle.cf*alphaFront;
+ let rearFy=-vehicle.cr*alphaRear;
+ // A handbrake locks the rear axle more readily; no artificial drift impulse is added.
+ const rearMu=handbrake?0.48:mu;
+ frontFy=THREE.MathUtils.clamp(frontFy,-mu*frontLoad,mu*frontLoad);
+ rearFy=THREE.MathUtils.clamp(rearFy,-rearMu*rearLoad,rearMu*rearLoad);
+ const lateralAccel=(frontFy*Math.cos(steeringAngle)+rearFy)/vehicle.mass-vy*yawRateNow/Math.max(2,absVx);
+ const yawAccel=(vehicle.lf*frontFy*Math.cos(steeringAngle)-vehicle.lr*rearFy)/vehicle.iz;
+ lateralSpeed+=lateralAccel*dt;
+ yawRate+=yawAccel*dt;
+ lateralSpeed*=Math.exp(-(onRoad?0.10:0.9)*dt);
+ yawRate=THREE.MathUtils.clamp(yawRate,-1.5,1.5);
+ if(absVx<0.4){lateralSpeed*=Math.exp(-2.0*dt);yawRate*=Math.exp(-2.8*dt);}
+ // Body-frame velocities are integrated into world coordinates. Yaw is the heading angle.
  yaw+=yawRate*dt;
-
- // Lateral slip comes from the body turning faster than its momentum can follow.
- // Normal tyres recover progressively; the handbrake reduces rear grip and allows a wider slide.
- const lateralGrip=handbrake?1.35:(onRoad?7.5:1.7);
- lateralSpeed+=(-speed*yawRate-lateralSpeed*lateralGrip)*dt;
- if(handbrake&&absSpeed>3) lateralSpeed+=steerInput*speed*0.34*dt;
- lateralSpeed=THREE.MathUtils.clamp(lateralSpeed,-8,8);
- // Lateral tyre force saturates on grass, so steering off-road feels less precise.
- if(!onRoad)lateralSpeed=THREE.MathUtils.clamp(lateralSpeed,-6,6);
  car.position.x+=(Math.sin(yaw)*speed+Math.cos(yaw)*lateralSpeed)*dt;
  car.position.z+=(Math.cos(yaw)*speed-Math.sin(yaw)*lateralSpeed)*dt;
 
- // Loop the road while preserving the car's position relative to the track and its heading.
  let z=trackZ();
  if(z>trackLength-3){
    const offset=car.position.x-roadX(trackLength-3);
-   car.position.z=-trackLength/2+10;
-   z=10;
+   car.position.z=-trackLength/2+10;z=10;
    car.position.x=roadX(z)+offset;
    yaw=roadHeading(z)+(yaw-roadHeading(trackLength-3));
    showToast('ROUTE LOOP · KEEP DRIVING');
@@ -318,22 +335,27 @@ function update(dt){
  const offset=car.position.x-roadX(z);
  car.position.y=roadY(z);
  car.rotation.y=yaw;
-
- // Body response: roll follows lateral acceleration; pitch follows throttle/braking.
- const lateralAccel=THREE.MathUtils.clamp(-speed*yawRate,-12,12);
- const targetRoll=THREE.MathUtils.clamp(-lateralAccel*0.012,-0.13,0.13);
- const targetPitch=braking&&speed>0?0.045:throttle?-0.022:0;
- car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,4.5,dt);
- car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.5,dt);
-
- // Off-road drag ramps up with distance beyond the road edge instead of a sudden speed penalty.
+ // Visible front wheel steer and simple suspension/weight-transfer cues.
+ const frontWheelSteer=steeringAngle;
+ if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=frontWheelSteer;
+ const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.45,0.45);
+ const targetRoll=-lateralG*0.12;
+ const targetPitch=THREE.MathUtils.clamp(-longitudinalAccel*0.008,-0.045,0.045);
+ car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,3.5,dt);
+ car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.0,dt);
+ // Suspension compression is visual-only: braking compresses the front, acceleration the rear.
+ if(wheelAssemblies)for(const w of wheelAssemblies){
+   const isFront=w.userData.axle==='front';
+   const targetY=0.48+(isFront?-targetPitch:targetPitch)*1.7;
+   w.position.y=THREE.MathUtils.damp(w.position.y,targetY,8,dt);
+ }
  const roadEdge=roadWidth/2-1.05;
  if(Math.abs(offset)>roadEdge){
    const excess=Math.abs(offset)-roadEdge;
-   const offroadDrag=THREE.MathUtils.clamp(0.7+excess*0.16,0.7,2.8);
+   const offroadDrag=THREE.MathUtils.clamp(0.9+excess*0.22,0.9,3.5);
    speed*=Math.max(0,1-offroadDrag*dt);
+   lateralSpeed*=Math.exp(-1.5*dt);
  }
-
  const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
  const camTarget=new THREE.Vector3(car.position.x,car.position.y+1.5,car.position.z).addScaledVector(forward,3.0);
  const camPos=new THREE.Vector3(car.position.x,car.position.y+4.8,car.position.z).addScaledVector(forward,-9.5);
