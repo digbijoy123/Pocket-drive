@@ -28,6 +28,53 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 #toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);padding:9px 14px;background:var(--glass);border:1px solid var(--line);border-radius:10px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}
 @media (pointer:coarse),(max-width:760px){.mobile-controls{display:flex}.hint{display:none}.bottom{padding-bottom:105px}.center{top:43%}}
 @media (max-width:520px){.actions{gap:4px}.actions .btn{padding:8px 7px;font-size:9px}.bottom{gap:4px}.settings-actions .btn{font-size:11px}}\n@media (max-width:390px){.brand{padding:9px 10px}.speedbox{min-width:94px;padding:9px 10px}.mobile-controls{padding:0 12px}.steering,.pedals{gap:7px}}
+
+/* Responsive HUD/control layout: keep every control in its own safe zone. */
+@media (pointer:coarse) {
+  .hud{padding:12px;pointer-events:none}
+  .top{gap:8px}
+  .brand{padding:9px 12px;border-radius:13px}
+  .brand strong{font-size:12px}
+  .brand span{font-size:9px}
+  .speedbox{min-width:92px;padding:8px 11px}
+  .speed{font-size:clamp(25px,5vh,36px)}
+  .unit{font-size:9px}
+  .gear{font-size:10px;margin-top:3px}
+  .bottom{position:fixed;top:82px;left:12px;right:12px;bottom:auto;padding:0;display:block;z-index:4}
+  .hint{display:none}
+  .actions{width:100%;max-width:none;display:flex;flex-wrap:nowrap;justify-content:center;gap:6px;overflow-x:auto;overflow-y:hidden;padding:2px 1px 7px;scrollbar-width:none}
+  .actions::-webkit-scrollbar{display:none}
+  .actions .btn{flex:0 0 auto;white-space:nowrap;padding:9px 11px;font-size:11px;border-radius:11px}
+  .center{top:40%;font-size:10px;max-width:80%;white-space:nowrap}
+  .mobile-controls{inset:auto 0 10px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:0 12px;z-index:3}
+  .steering{gap:7px}
+  .steer{width:clamp(48px,8vh,66px);height:clamp(48px,8vh,66px);font-size:23px}
+  .steering-wheel-wrap{width:clamp(104px,18vh,145px);height:clamp(104px,18vh,145px);flex:0 0 auto}
+  .pedals{gap:6px;align-items:flex-end}
+  .pedal{width:clamp(54px,8vw,78px);height:clamp(62px,12vh,82px);border-radius:16px;font-size:11px}
+  .control-stack{gap:6px}
+  .pedal.utility{width:clamp(58px,8vw,78px);height:clamp(34px,6vh,43px);border-radius:12px;font-size:9px;padding:3px}
+}
+@media (pointer:coarse) and (orientation:landscape) {
+  .bottom{top:76px}
+  .center{top:43%}
+  .mobile-controls{bottom:10px}
+  .steering-wheel-wrap{width:clamp(96px,17vh,132px);height:clamp(96px,17vh,132px)}
+  .steer{width:clamp(46px,7vh,58px);height:clamp(46px,7vh,58px)}
+  .pedal{height:clamp(58px,11vh,76px)}
+}
+@media (pointer:coarse) and (orientation:portrait) {
+  .bottom{top:82px;left:10px;right:10px}
+  .actions{justify-content:flex-start}
+  .center{top:39%;white-space:normal}
+  .mobile-controls{align-items:flex-end;gap:6px;padding:0 8px;bottom:10px}
+  .steering-wheel-wrap{width:clamp(92px,25vw,132px);height:clamp(92px,25vw,132px)}
+  .steer{width:clamp(42px,12vw,56px);height:clamp(42px,12vw,56px)}
+  .pedals{gap:4px}
+  .pedal{width:clamp(48px,13vw,66px);height:clamp(60px,10vh,76px);font-size:10px;border-radius:13px}
+  .pedal.utility{width:clamp(48px,13vw,66px);font-size:8px}
+}
+
 </style>
 </head>
 <body>
