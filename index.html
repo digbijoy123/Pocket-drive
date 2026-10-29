@@ -91,6 +91,35 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
 .menu-footer span{color:var(--accent);}
 @media(max-width:520px){.menu-panel{border-radius:22px}.menu-logo{margin-top:24px}.menu-footer{margin-top:23px}}
 
+
+/* Sketch-inspired driving HUD */
+.icon-btn{width:clamp(42px,5.5vw,58px);height:clamp(42px,5.5vw,58px);padding:0;border-radius:50%;font-size:22px;display:grid;place-items:center;flex:0 0 auto}
+.actions{max-width:none;gap:10px;align-items:flex-start}
+.sport-icon{font-weight:900;font-style:italic}
+.gear-selector{pointer-events:auto;display:flex;flex-direction:column;gap:5px;padding:6px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(12px);border-radius:24px}
+.gear-choice{width:38px;height:38px;border-radius:50%;border:2px solid #ffffff55;background:#111b28;color:#fff;font-size:15px;font-weight:800}
+.gear-choice.active{border-color:var(--accent);box-shadow:0 0 0 2px #9cff5733;color:var(--accent)}
+.pedal.utility.handbrake{width:clamp(62px,17vw,86px);height:clamp(62px,17vw,86px);border-radius:50%;font-size:22px}
+.utility-actions{margin-top:12px}
+.utility-actions .btn{margin:0!important}
+.menu-buttons #fullscreenBtn{margin-top:0}
+@media (pointer:coarse){
+ .top{align-items:flex-start}
+ .actions{position:fixed;top:12px;left:12px;right:auto;width:auto;max-width:none;overflow:visible;padding:0;gap:8px}
+ .actions .btn{width:clamp(42px,11vw,52px);height:clamp(42px,11vw,52px);padding:0;font-size:20px;border-radius:50%;flex:0 0 auto}
+ .bottom{display:none}
+ .speedbox{margin-left:auto}
+ .mobile-controls{inset:auto 0 12px;align-items:flex-end}
+ .control-stack{align-items:center}
+ .gear-selector{gap:4px;padding:5px}
+ .gear-choice{width:clamp(32px,8.5vw,40px);height:clamp(32px,8.5vw,40px)}
+ .pedal.utility.handbrake{width:clamp(54px,14vw,68px);height:clamp(54px,14vw,68px);font-size:20px}
+ .steering-wheel-wrap{width:clamp(120px,31vw,170px);height:clamp(120px,31vw,170px)}
+ .pedals{gap:8px}
+ .pedal{width:clamp(62px,16vw,82px);height:clamp(78px,18vh,100px)}
+ .settings-actions{gap:8px}
+}
+@media (pointer:coarse) and (orientation:landscape){.mobile-controls{bottom:8px}.steering-wheel-wrap{width:clamp(112px,23vh,150px);height:clamp(112px,23vh,150px)}}
 </style>
 </head>
 <body>
@@ -319,8 +348,8 @@ function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(sho
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
 function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10),roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
-function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
-document.getElementById('resetBtn').addEventListener('click',reset);
+function togglePause(){if(!started)return;paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
+document.getElementById('resetBtn').addEventListener('click',()=>{reset();settingsPanel.classList.remove('open');if(started)paused=false;});
 const cameraBtn=document.getElementById('cameraBtn');
 function cycleCamera(){
  const previous=cameraMode;cameraMode=(cameraMode+1)%4;
@@ -369,9 +398,10 @@ function setSteeringMode(mode){
  input.left=false;input.right=false;wheelAngle=0;wheelReturnVelocity=0;steeringWheel.style.transform='rotate(0deg)';
  showToast('Steering: '+(mode==='wheel'?'wheel':'buttons'));
 }
-document.getElementById('settingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
+function openPauseSettings(){if(started){paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;}settingsPanel.classList.add('open');}
+document.getElementById('settingsBtn').addEventListener('click',openPauseSettings);
 document.getElementById('mainSettingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
-document.getElementById('closeSettingsBtn').addEventListener('click',()=>settingsPanel.classList.remove('open'));
+document.getElementById('closeSettingsBtn').addEventListener('click',()=>{settingsPanel.classList.remove('open');if(started){paused=false;showToast('BACK ON THE ROAD');}});
 document.getElementById('buttonSteeringBtn').addEventListener('click',()=>setSteeringMode('buttons'));
 document.getElementById('wheelSteeringBtn').addEventListener('click',()=>setSteeringMode('wheel'));
 let wheelPointerId=null,wheelLastPointerAngle=0;
@@ -403,6 +433,7 @@ steeringWheel.addEventListener('lostpointercapture',()=>{wheelPointerActive=fals
 function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
 gearBtn?.addEventListener('click',changeGear);
+document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>{const next=el.dataset.gear;if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}if(next==='N')speed=0;driveMode=next;document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));syncGearButton();showToast('GEAR '+driveMode);}));
 document.getElementById('pauseBtn').addEventListener('click',togglePause);
 const fullscreenBtn=document.getElementById('fullscreenBtn');
 function syncFullscreenButton(){
