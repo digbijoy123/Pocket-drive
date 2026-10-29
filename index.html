@@ -181,7 +181,8 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, paused=true, started=false, last=performance.now();
-let cameraMode=1; // 0 close follow, 1 far follow, 2 hood
+let cameraMode=1; // 0 close follow, 1 far follow, 2 hood, 3 free orbit
+let freeCamYaw=0, freeCamPitch=0.22, freeCamDistance=10, freeCamPointerId=null, freeCamLastX=0, freeCamLastY=0;
 const speedEl=document.getElementById('speed'), gearEl=document.getElementById('gear'), toast=document.getElementById('toast');
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
@@ -190,8 +191,39 @@ function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;steeringAngle
 function togglePause(){if(!started)return;paused=!paused;document.getElementById('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';showToast(paused?'PAUSED':'BACK ON THE ROAD')}
 document.getElementById('resetBtn').addEventListener('click',reset);
 const cameraBtn=document.getElementById('cameraBtn');
-function cycleCamera(){cameraMode=(cameraMode+1)%3;const labels=['CAM: CLOSE','CAM: FAR','CAM: HOOD'];cameraBtn.textContent=labels[cameraMode];cameraBtn.setAttribute('aria-label','Camera view: '+labels[cameraMode].replace('CAM: ',''));showToast(labels[cameraMode].replace('CAM: ','')+' CAMERA');}
+function cycleCamera(){
+ const previous=cameraMode;cameraMode=(cameraMode+1)%4;
+ const labels=['CAM: CLOSE','CAM: FAR','CAM: HOOD','CAM: FREE'];
+ if(cameraMode===3){
+   const dx=camera.position.x-car.position.x,dy=camera.position.y-(car.position.y+0.9),dz=camera.position.z-car.position.z;
+   freeCamDistance=THREE.MathUtils.clamp(Math.hypot(dx,dy,dz),4,28);
+   freeCamYaw=Math.atan2(dx,dz);
+   freeCamPitch=THREE.MathUtils.clamp(Math.atan2(dy,Math.hypot(dx,dz)),-0.15,1.05);
+   showToast('FREE CAM · DRAG TO LOOK · SCROLL TO ZOOM');
+ }else showToast(labels[cameraMode].replace('CAM: ','')+' CAMERA');
+ cameraBtn.textContent=labels[cameraMode];cameraBtn.setAttribute('aria-label','Camera view: '+labels[cameraMode].replace('CAM: ',''));
+}
 cameraBtn.addEventListener('click',cycleCamera);
+// In free-camera mode, drag on the world to orbit around the car; wheel/trackpad scroll adjusts distance.
+renderer.domElement.addEventListener('pointerdown',e=>{
+ if(cameraMode!==3||e.button!==0)return;
+ freeCamPointerId=e.pointerId;freeCamLastX=e.clientX;freeCamLastY=e.clientY;
+ try{renderer.domElement.setPointerCapture(e.pointerId)}catch{}
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+ if(cameraMode!==3||freeCamPointerId!==e.pointerId)return;
+ const dx=e.clientX-freeCamLastX,dy=e.clientY-freeCamLastY;freeCamLastX=e.clientX;freeCamLastY=e.clientY;
+ freeCamYaw-=dx*0.006;freeCamPitch=THREE.MathUtils.clamp(freeCamPitch+dy*0.005,-0.15,1.05);
+ e.preventDefault();
+});
+function releaseFreeCamPointer(e){if(freeCamPointerId===null||e.pointerId===freeCamPointerId)freeCamPointerId=null;}
+renderer.domElement.addEventListener('pointerup',releaseFreeCamPointer);
+renderer.domElement.addEventListener('pointercancel',releaseFreeCamPointer);
+renderer.domElement.addEventListener('lostpointercapture',()=>{freeCamPointerId=null});
+renderer.domElement.addEventListener('wheel',e=>{
+ if(cameraMode!==3)return;
+ e.preventDefault();freeCamDistance=THREE.MathUtils.clamp(freeCamDistance+e.deltaY*0.012,3.5,35);
+},{passive:false});
 const gearBtn=document.getElementById('gearBtn');
 const mobileControls=document.querySelector('.mobile-controls');
 const settingsPanel=document.getElementById('settingsPanel');
@@ -372,17 +404,22 @@ function update(dt){
 
  // Camera presets: close chase, the original farther chase, and a hood-mounted view.
  const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
- const target=new THREE.Vector3(car.position.x,car.position.y+1.15,car.position.z).addScaledVector(forward,cameraMode===2?18:2.5);
+ let target=new THREE.Vector3(car.position.x,car.position.y+1.15,car.position.z).addScaledVector(forward,cameraMode===2?18:2.5);
  let camPos;
  if(cameraMode===0){
    camPos=new THREE.Vector3(car.position.x,car.position.y+2.9,car.position.z).addScaledVector(forward,-5.4);
  }else if(cameraMode===1){
    camPos=new THREE.Vector3(car.position.x,car.position.y+4.8,car.position.z).addScaledVector(forward,-9.5);
- }else{
+ }else if(cameraMode===2){
    camPos=car.localToWorld(new THREE.Vector3(0,1.62,0.88));
    target=car.localToWorld(new THREE.Vector3(0,1.36,24));
  }
- if(cameraMode===2){
+ if(cameraMode===3){
+   target.set(car.position.x,car.position.y+0.9,car.position.z);
+   const horizontal=freeCamDistance*Math.cos(freeCamPitch);
+   camera.position.set(target.x+Math.sin(freeCamYaw)*horizontal,target.y+freeCamDistance*Math.sin(freeCamPitch),target.z+Math.cos(freeCamYaw)*horizontal);
+   camera.up.set(0,1,0);
+ }else if(cameraMode===2){
    // Keep the hood camera mounted to the pitched/rolled chassis instead of letting the body move through it.
    camera.position.copy(camPos);
    camera.up.copy(car.localToWorld(new THREE.Vector3(0,1,0)).sub(car.position).normalize());
