@@ -272,6 +272,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <div class="menu-buttons">
       <button class="btn menu-play" id="startBtn"><span>▶</span> PLAY</button>
       <button class="btn menu-settings" id="chooseCarBtn"><span>🚘</span> CHOOSE CAR</button>
+      <button class="btn menu-settings" id="multiplayerBtn"><span>🌐</span> MULTIPLAYER</button>
       <button class="btn menu-settings" id="mainSettingsBtn"><span>⚙</span> SETTINGS</button>
     </div>
     <div class="menu-footer">HILLSIDE RUN <span>•</span> VERSION 1.0</div>
@@ -291,8 +292,33 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
     <button class="btn menu-settings" id="backToMenuBtn" style="width:100%;margin-top:14px">← BACK TO MENU</button>
   </div>
 </div>
+
+<div class="overlay main-menu" id="multiplayerScreen" style="display:none">
+  <div class="panel menu-panel" style="width:min(460px,100%)">
+    <div class="eyebrow">PLAY TOGETHER · UP TO 5 PLAYERS</div>
+    <div class="menu-logo" style="font-size:clamp(30px,7vw,48px);margin:18px 0">MULTI<span>PLAYER</span></div>
+    <p class="menu-tagline">Create a room and share its key, or enter a friend's key.</p>
+    <div class="menu-buttons">
+      <button class="btn menu-play" id="createRoomBtn">＋ CREATE ROOM</button>
+      <div id="roomCreatedPanel" style="display:none;border:1px solid #9cff5766;border-radius:14px;padding:14px;background:#9cff570c">
+        <div style="font-size:10px;letter-spacing:.16em;color:#b7c7d5">YOUR ROOM KEY</div>
+        <div id="roomCodeDisplay" style="font-size:30px;font-weight:900;letter-spacing:.18em;color:#9cff57;margin:8px 0">------</div>
+        <button class="btn menu-settings" id="copyRoomCodeBtn" style="width:100%;margin:0">COPY ROOM KEY</button>
+        <div id="roomHostStatus" style="font-size:11px;color:#c2cfdb;margin-top:10px">Waiting for friends…</div>
+        <button class="btn menu-play" id="startRoomGameBtn" style="width:100%">START GAME</button>
+      </div>
+      <div style="height:1px;background:#ffffff22;margin:5px 0"></div>
+      <input id="joinRoomCode" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ENTER 6-LETTER ROOM KEY" style="width:100%;padding:14px;border-radius:12px;border:1px solid #ffffff35;background:#ffffff12;color:white;text-align:center;font-size:17px;font-weight:800;letter-spacing:.2em;outline:none">
+      <button class="btn menu-settings" id="joinRoomBtn">JOIN ROOM</button>
+      <div id="roomJoinStatus" style="min-height:18px;font-size:11px;color:#c2cfdb;text-align:center"></div>
+    </div>
+    <button class="btn menu-settings" id="backFromMultiplayerBtn" style="width:100%;margin-top:14px">← BACK TO MENU</button>
+  </div>
+</div>
+<div id="networkHud" style="display:none;position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:4;padding:7px 12px;border:1px solid #ffffff30;border-radius:12px;background:rgba(12,20,30,.78);color:#fff;font-size:11px;letter-spacing:.08em;pointer-events:none;white-space:nowrap"></div>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import Peer from 'https://esm.sh/peerjs@1.5.4';
 
 const root = document.getElementById('game');
 const scene = new THREE.Scene();
@@ -762,12 +788,156 @@ function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h 
 gearBtn?.addEventListener('click',changeGear);
 document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>selectGear(el.dataset.gear)));
 // Pause is opened through the on-screen settings button.
+
+// Lightweight host-relayed WebRTC multiplayer. Room keys are PeerJS peer IDs;
+// no game server or database is required for small friend rooms.
+let networkPeer=null, networkHost=false, networkRoomCode='', networkHostConn=null;
+let networkPlayers=new Map(), networkSlot=0, networkAccumulator=0, networkActive=false;
+const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=.10;
+const networkHud=document.getElementById('networkHud');
+function setRoomStatus(id,message){const el=document.getElementById(id);if(el)el.textContent=message;}
+function setNetworkHud(message){networkHud.textContent=message;networkHud.style.display=message?'block':'none';}
+function makeRoomCode(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let code='';for(let i=0;i<6;i++)code+=chars[Math.floor(Math.random()*chars.length)];return code;}
+function networkSpawn(slot){
+ const z=10, x=roadX(z)+7.2+slot*2.35;
+ return {x,y:roadY(z),z:worldZ(z),yaw:roadHeading(z)};
+}
+function setLocalNetworkSpawn(slot){
+ const p=networkSpawn(slot);car.position.set(p.x,p.y,p.z);yaw=p.yaw;car.rotation.set(0,yaw,0);
+ speed=0;lateralSpeed=0;yawRate=0;verticalVelocity=0;grounded=true;
+}
+function createRemoteCar(id,color){
+ let entry=networkPlayers.get(id);
+ if(entry&&entry.mesh)return entry.mesh;
+ const mesh=car.clone(true);
+ mesh.traverse(obj=>{
+  if(!obj.isMesh||!obj.material)return;
+  const mats=Array.isArray(obj.material)?obj.material:[obj.material];
+  const copies=mats.map(original=>{
+   const m=original.clone();
+   if(m.color&&(original===redMat||original===yellowMat||original.color.getHex()===redMat.color.getHex()||original.color.getHex()===yellowMat.color.getHex()))m.color.setHex(color||0x39a9ff);
+   return m;
+  });
+  obj.material=Array.isArray(obj.material)?copies:copies[0];
+ });
+ mesh.position.set(0,-100,0);scene.add(mesh);
+ networkPlayers.set(id,{mesh,color:color||0x39a9ff,target:null,conn:entry?.conn||null,slot:entry?.slot||0});
+ return mesh;
+}
+function removeRemotePlayer(id){
+ const entry=networkPlayers.get(id);if(!entry)return;
+ if(entry.mesh){scene.remove(entry.mesh);entry.mesh.traverse(o=>{if(o.isMesh&&o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose();}});}
+ networkPlayers.delete(id);
+}
+function sendToRoom(data){
+ if(networkHost){for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(data);}
+ else if(networkHostConn&&networkHostConn.open)networkHostConn.send(data);
+}
+function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,color:carStyles[selectedCar]?.color||0xe95b49};}
+function applyNetworkSnapshot(states){
+ for(const [id,state] of Object.entries(states||{})){
+  if((networkHost&&id==='host')||(!networkHost&&id===networkPeer?.id))continue;
+  const mesh=createRemoteCar(id,state.color);
+  const entry=networkPlayers.get(id);entry.target=state;
+ }
+ for(const [id] of networkPlayers){if(!states||!states[id])removeRemotePlayer(id);}
+}
+function hostHandleConnection(conn){
+ conn.on('open',()=>{});
+ conn.on('data',data=>{
+  if(!data||typeof data!=='object')return;
+  if(data.type==='join'){
+   if(networkPlayers.size>=NETWORK_MAX_PLAYERS-1){conn.send({type:'full'});conn.close();return;}
+   const slot=networkPlayers.size+1,color=[0x39a9ff,0x52c878,0xf2c14e,0xb58cff][(networkPlayers.size)%4];
+   networkPlayers.set(conn.peer,{conn,slot,color,mesh:null,state:networkSpawn(slot)});
+   conn.send({type:'welcome',slot,host:currentNetworkState(),players:Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,p])=>[id,p.state||{}]))});
+   setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));
+  }else if(data.type==='state'){
+   const p=networkPlayers.get(conn.peer);if(p)p.state=data.state;
+  }
+ });
+ conn.on('close',()=>{removeRemotePlayer(conn.peer);setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));});
+ conn.on('error',()=>{});
+}
+async function createMultiplayerRoom(){
+ if(networkPeer){networkPeer.destroy();networkPeer=null;}
+ networkPlayers.clear();networkHost=true;networkActive=false;networkHostConn=null;
+ const code=makeRoomCode();networkRoomCode=code;
+ setRoomStatus('roomJoinStatus','Creating room…');
+ try{
+  networkPeer=new Peer('pdrive-'+code);
+  networkPeer.on('open',()=>{document.getElementById('roomCreatedPanel').style.display='block';document.getElementById('roomCodeDisplay').textContent=code;setRoomStatus('roomHostStatus','Room ready · waiting for friends…');setRoomStatus('roomJoinStatus','');});
+  networkPeer.on('connection',hostHandleConnection);
+  networkPeer.on('error',err=>{setRoomStatus('roomJoinStatus','Room error: '+(err.type||err.message||'connection failed'));});
+ }catch(err){setRoomStatus('roomJoinStatus','Could not create room. Check your connection.');}
+}
+async function joinMultiplayerRoom(){
+ const code=document.getElementById('joinRoomCode').value.trim().toUpperCase();
+ if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code)){setRoomStatus('roomJoinStatus','Enter the 6-character room key.');return;}
+ if(networkPeer){networkPeer.destroy();networkPeer=null;}
+ networkPlayers.clear();networkHost=false;networkActive=false;networkRoomCode=code;
+ setRoomStatus('roomJoinStatus','Connecting to room…');
+ try{
+  networkPeer=new Peer();
+  networkPeer.on('open',()=>{
+   networkHostConn=networkPeer.connect('pdrive-'+code,{reliable:true});
+   networkHostConn.on('open',()=>networkHostConn.send({type:'join'}));
+   networkHostConn.on('data',data=>{
+    if(data.type==='full'){setRoomStatus('roomJoinStatus','Room is full (maximum 5 players).');networkHostConn.close();return;}
+    if(data.type==='welcome'){
+     networkSlot=data.slot;setLocalNetworkSpawn(networkSlot);
+     for(const [id,state] of Object.entries(data.players||{})){createRemoteCar(id,state.color);networkPlayers.get(id).target=state;}
+     networkActive=true;setRoomStatus('roomJoinStatus','Connected! Joining the drive…');
+     launchGame();
+    }else if(data.type==='snapshot'){applyNetworkSnapshot(data.players);}
+   });
+   networkHostConn.on('close',()=>{networkActive=false;setNetworkHud('HOST DISCONNECTED');setRoomStatus('roomJoinStatus','Host disconnected.');});
+   networkHostConn.on('error',()=>setRoomStatus('roomJoinStatus','Could not connect. Check the room key.'));
+  });
+  networkPeer.on('error',err=>setRoomStatus('roomJoinStatus',err.type==='peer-unavailable'?'Room not found. Check the key.':'Connection error: '+(err.type||'try again')));
+ }catch(err){setRoomStatus('roomJoinStatus','Could not join. Check your connection.');}
+}
+function networkTick(dt){
+ if(!networkActive||!networkPeer||networkPeer.destroyed)return;
+ networkAccumulator+=dt;if(networkAccumulator<NETWORK_TICK)return;networkAccumulator=0;
+ const mine=currentNetworkState();
+ if(networkHost){
+  const states={host:mine};
+  for(const [id,p] of networkPlayers){if(p.state)states[id]={...p.state,color:p.color};}
+  const packet={type:'snapshot',players:states};
+  for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(packet);
+ }else if(networkHostConn&&networkHostConn.open){
+  networkHostConn.send({type:'state',state:mine});
+ }
+ for(const p of networkPlayers.values()){
+  if(p.mesh&&p.target){
+   p.mesh.position.lerp(new THREE.Vector3(p.target.x,p.target.y,p.target.z),.45);
+   const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
+   p.mesh.rotation.y+=delta*.45;
+  }
+ }
+}
+function leaveMultiplayer(){
+ networkActive=false;networkHost=false;networkRoomCode='';networkHostConn=null;
+ if(networkPeer){networkPeer.destroy();networkPeer=null;}
+ for(const id of [...networkPlayers.keys()])removeRemotePlayer(id);
+ networkPlayers.clear();setNetworkHud('');
+}
+
 async function launchGame(){
  const startScreen=document.getElementById('startScreen'),chooser=document.getElementById('carSelectScreen');
  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();if(screen.orientation&&screen.orientation.lock){try{await screen.orientation.lock('landscape')}catch(_){}}}catch(_){showToast('Starting game · fullscreen may be restricted by browser');}
  started=true;paused=false;initGameAudio();syncAudioState();yaw=roadHeading(trackZ());car.rotation.y=yaw;
  startScreen.style.display='none';chooser.style.display='none';last=performance.now();
 }
+document.getElementById('multiplayerBtn').addEventListener('click',()=>{document.getElementById('multiplayerScreen').style.display='flex';});
+document.getElementById('backFromMultiplayerBtn').addEventListener('click',()=>{document.getElementById('multiplayerScreen').style.display='none';});
+document.getElementById('createRoomBtn').addEventListener('click',createMultiplayerRoom);
+document.getElementById('joinRoomBtn').addEventListener('click',joinMultiplayerRoom);
+document.getElementById('joinRoomCode').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,'').slice(0,6);});
+document.getElementById('copyRoomCodeBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(networkRoomCode);setRoomStatus('roomHostStatus','Room key copied · waiting for friends…');}catch(_){setRoomStatus('roomHostStatus','Room key: '+networkRoomCode);}});
+document.getElementById('startRoomGameBtn').addEventListener('click',()=>{networkActive=true;networkSlot=0;setLocalNetworkSpawn(0);launchGame();});
+
 document.getElementById('startBtn').addEventListener('click',launchGame);
 document.getElementById('chooseCarBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='flex';});
 document.getElementById('backToMenuBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='none';});
@@ -982,6 +1152,7 @@ if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
    camera.up.set(0,1,0);
  }
  camera.lookAt(target);
+ networkTick(dt);
  updateGameAudio();
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
  if(!grounded&&airtime>.15)gearEl.textContent='AIR · '+Math.round(airtime*10)/10+'s';
