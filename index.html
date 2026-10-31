@@ -347,6 +347,8 @@ function makeStrip(width,y,material,offset=0){
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;mesh.frustumCulled=false;scene.add(mesh);
 }
 // Keep the terrain physically below the complete road corridor and station forecourt.
+const stationZ=10, stationWorldZ=worldZ(stationZ);
+const stationRoadX=roadX(stationZ), stationY=roadY(stationZ);
 function terrainHeight(x,z){
  const center=roadX(z),distance=Math.abs(x-center),elevation=roadY(z);
  const mountainBlend=smooth(255,370,z)*(1-smooth(690,875,z));
@@ -452,8 +454,6 @@ for(let i=0;i<12;i++){
 }
 // Small roadside fuel stop and forecourt. The paved apron physically joins the road edge.
 const fuelStop=new THREE.Group();scene.add(fuelStop);
-const stationZ=10, stationWorldZ=worldZ(stationZ);
-const stationRoadX=roadX(stationZ), stationY=roadY(stationZ);
 const asphaltMat=mat(0x51575b), concreteMat=mat(0xb8b9b2), canopyMat=mat(0xf1f0e8), fuelRedMat=mat(0xd84635), fuelBlueMat=mat(0x2679ad), signMat=mat(0x153b2b), glassShopMat=mat(0x75a7ad);
 function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
