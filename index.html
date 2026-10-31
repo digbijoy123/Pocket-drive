@@ -313,43 +313,71 @@ const sun = new THREE.DirectionalLight(0xfff0d4,2.4); sun.position.set(-35,65,25
 const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness,flatShading:true});
 const grassMat=mat(0x6fae61), roadMat=mat(0x424b56), edgeMat=mat(0xf4e9d2), lineMat=mat(0xffd77b);
 const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=mat(0x8fc9d5), redMat=mat(0xe95b49), yellowMat=mat(0xf2c14e);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),grassMat); ground.rotation.x=-Math.PI/2; ground.position.y=-.16; scene.add(ground);
-
 // Long scenic route: dense forest, climbing mountain switchbacks, descent, then a village.
-const trackLength=1200, roadWidth=6.4;
+// The approach begins well behind the spawn so the chase camera never looks into an empty void.
+const trackLength=1200, roadWidth=6.4, approachLength=520, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- const forest=13*Math.sin(z/31)+8*Math.sin(z/14.5)+4.5*Math.sin(z/7.3);
+ // Smooth, readable bends: keep lateral curvature gradual enough for the road mesh and terrain to meet cleanly.
+ const forest=10*Math.sin(z/70)+4.2*Math.sin(z/34)+1.5*Math.sin(z/19);
  const climb=smooth(265,365,z), summit=smooth(675,790,z), mountain=climb*(1-summit);
- const switchbacks=mountain*(34*Math.sin(z/48)+20*Math.sin(z/24)+7*Math.sin(z/12));
+ const switchbacks=mountain*(27*Math.sin(z/96)+11*Math.sin(z/51)+3.2*Math.sin(z/27));
  const villageBlend=smooth(850,970,z);
- const village= (1-villageBlend)*(forest+switchbacks) + villageBlend*(5*Math.sin(z/72)+2.2*Math.sin(z/29));
+ const village=(1-villageBlend)*(forest+switchbacks)+villageBlend*(5*Math.sin(z/82)+2*Math.sin(z/37));
  return village;
 }
 function roadY(z){
  const climb=smooth(280,540,z), descent=smooth(690,860,z);
  const mountainHeight=climb*(1-descent)*30;
- return mountainHeight + .32*Math.sin(z/19)+.12*Math.sin(z/7.5);
+ return mountainHeight+.22*Math.sin(z/34)+.07*Math.sin(z/13);
 }
+const worldZ=z=>z-trackLength/2;
 function makeStrip(width,y,material,offset=0){
- const verts=[],indices=[],n=trackLength;
+ const verts=[],indices=[],n=trackLength-routeStart;
  for(let i=0;i<=n;i++){
-  const z=i,x=roadX(z),dx=(roadX(Math.min(trackLength,z+1))-roadX(Math.max(0,z-1)))/2;
-  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv;
-  const half=width/2+offset;
-  verts.push(x-px*half,y+roadY(z),z-trackLength/2-pz*half,x+px*half,y+roadY(z),z-trackLength/2+pz*half);
+  const z=routeStart+i,x=roadX(z),dx=(roadX(z+1)-roadX(z-1))/2,dy=(roadY(z+1)-roadY(z-1))/2;
+  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv,half=width/2+offset;
+  // Slightly bank the cross-section to follow the road's vertical grade as well as its turns.
+  const bank=dy*pz;
+  verts.push(x-px*half, y+roadY(z)+bank*half*.12, worldZ(z)-pz*half,
+             x+px*half, y+roadY(z)-bank*half*.12, worldZ(z)+pz*half);
  }
  for(let i=0;i<n;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
- const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;scene.add(mesh);
+ const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;mesh.frustumCulled=false;scene.add(mesh);
 }
-makeStrip(roadWidth+1.2,.015,edgeMat);
-makeStrip(roadWidth,.04,roadMat);
-// dashed centerline segments
-for(let z=0;z<trackLength;z+=10){
-  const zz=z-trackLength/2, x=roadX(z);
-  const dash=new THREE.Mesh(new THREE.BoxGeometry(.12,.035,4.2),lineMat);
-  dash.position.set(x,roadY(z)+.075,zz);dash.rotation.y=Math.atan2(roadX(z+1)-roadX(z-1),2);scene.add(dash);
+// Continuous terrain corridor follows the road elevation and blends into broad rolling hills.
+// This replaces the old flat plane, which left the raised mountain road visibly floating.
+function terrainHeight(x,z){
+ const center=roadX(z), distance=Math.abs(x-center), elevation=roadY(z);
+ const shoulderBlend=Math.exp(-distance/58);
+ const rolling=1.15*Math.sin(x*.027+z*.009)+.7*Math.sin(x*.061-z*.017)+.35*Math.cos(z*.025+x*.018);
+ const roadsideCut=distance<roadWidth/2+1.8 ? -.20 : 0;
+ return elevation*shoulderBlend+rolling*(1-shoulderBlend)+roadsideCut;
+}
+{
+ const xMin=-260,xMax=260,zMin=routeStart,zMax=trackLength,stepX=10,stepZ=8;
+ const cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zMax-zMin)/stepZ),verts=[],indices=[];
+ for(let iz=0;iz<=rows;iz++){
+  const rz=Math.min(zMax,zMin+iz*stepZ), wz=worldZ(rz);
+  for(let ix=0;ix<=cols;ix++){
+   const x=Math.min(xMax,xMin+ix*stepX);
+   verts.push(x,terrainHeight(x,rz),wz);
+  }
+ }
+ for(let iz=0;iz<rows;iz++)for(let ix=0;ix<cols;ix++){
+  const a=iz*(cols+1)+ix,b=a+1,c=a+cols+1,d=c+1;
+  indices.push(a,c,b,b,c,d);
+ }
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
+ const terrain=new THREE.Mesh(geo,grassMat);terrain.material.side=THREE.DoubleSide;terrain.frustumCulled=false;scene.add(terrain);
+}
+makeStrip(roadWidth+1.2,.025,edgeMat);
+makeStrip(roadWidth,.055,roadMat);
+// Continuous road markings also run through the approach behind the player spawn.
+for(let z=routeStart;z<trackLength;z+=10){
+ const x=roadX(z),zz=worldZ(z),dash=new THREE.Mesh(new THREE.BoxGeometry(.13,.045,4.6),lineMat);
+ dash.position.set(x,roadY(z)+.105,zz);dash.rotation.y=Math.atan2(roadX(z+1)-roadX(z-1),2);scene.add(dash);
 }
 // roadside posts and stylized low-poly hills/trees
 const trunkMat=mat(0x76543a), leafMats=[mat(0x347a54),mat(0x4c965c),mat(0x7db85e)], rockMat=mat(0x87939a);
@@ -359,8 +387,8 @@ function tree(x,y,z,s=1){
   for(let i=0;i<3;i++){const cone=new THREE.Mesh(new THREE.ConeGeometry((1.05-i*.19)*s,1.55*s,5),leafMats[(Math.random()*leafMats.length)|0]);cone.position.y=(1.5+i*.64)*s;g.add(cone);}
   g.position.set(x,y,z);scene.add(g);
 }
-for(let z=0;z<trackLength;z+=7){
-  const cx=roadX(z), zz=z-trackLength/2;
+for(let z=routeStart;z<trackLength;z+=7){
+  const cx=roadX(z), zz=worldZ(z);
   const villageZone=z>950&&z<1160;
   for(const side of [-1,1]){
     if(!villageZone&&Math.random()<.94)tree(cx+side*(5.8+Math.random()*13),roadY(z)-.1,zz+(Math.random()-.5)*4,.7+Math.random()*1.05);
@@ -380,7 +408,7 @@ for(let i=0;i<12;i++){
 }
 // Small roadside fuel stop and forecourt. The paved apron physically joins the road edge.
 const fuelStop=new THREE.Group();scene.add(fuelStop);
-const stationZ=10, stationWorldZ=stationZ-trackLength/2;
+const stationZ=10, stationWorldZ=worldZ(stationZ);
 const stationRoadX=roadX(stationZ), stationY=roadY(stationZ);
 const asphaltMat=mat(0x51575b), concreteMat=mat(0xb8b9b2), canopyMat=mat(0xf1f0e8), fuelRedMat=mat(0xd84635), fuelBlueMat=mat(0x2679ad), signMat=mat(0x153b2b), glassShopMat=mat(0x75a7ad);
 function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
@@ -433,13 +461,13 @@ const mountainRockMats=[mat(0x59675f),mat(0x707b70),mat(0x899083)];
 for(let i=0;i<52;i++){
  const z=300+i*9.2, side=i%2?1:-1, cx=roadX(z);
  const rock=new THREE.Mesh(new THREE.ConeGeometry(7+Math.random()*9,12+Math.random()*22,5),mountainRockMats[i%mountainRockMats.length]);
- rock.position.set(cx+side*(24+Math.random()*24),roadY(z)+5+Math.random()*8,z-trackLength/2+(Math.random()-.5)*16);
+ rock.position.set(cx+side*(24+Math.random()*24),roadY(z)+5+Math.random()*8,worldZ(z)+(Math.random()-.5)*16);
  rock.rotation.z=(Math.random()-.5)*.22;scene.add(rock);
 }
 // Small hillside village at the end of the descent, with dirt clearings and simple houses.
 const villageGroundMat=mat(0x9c8b64), houseWallMats=[mat(0xd9bd8d),mat(0xc9d0bd),mat(0xd8a77f)], roofMat=mat(0x714c3a);
 for(let i=0;i<8;i++){
- const z=990+i*19, side=i%2?1:-1, cx=roadX(z), cy=roadY(z), zz=z-trackLength/2;
+ const z=990+i*19, side=i%2?1:-1, cx=roadX(z), cy=roadY(z), zz=worldZ(z);
  const clearing=new THREE.Mesh(new THREE.PlaneGeometry(17,18),villageGroundMat);clearing.rotation.x=-Math.PI/2;clearing.rotation.z=0;clearing.position.set(cx+side*14,cy+.015,zz);scene.add(clearing);
  const house=new THREE.Group();house.position.set(cx+side*(12+Math.random()*3),cy,zz);house.rotation.y=(Math.random()-.5)*.22;scene.add(house);
  const wall=new THREE.Mesh(new THREE.BoxGeometry(4.5,2.7,4),houseWallMats[i%houseWallMats.length]);wall.position.y=1.35;house.add(wall);
