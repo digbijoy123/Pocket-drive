@@ -849,7 +849,10 @@ function hostHandleConnection(conn){
   if(data.type==='join'){
    if(networkPlayers.size>=NETWORK_MAX_PLAYERS-1){conn.send({type:'full'});conn.close();return;}
    const slot=networkPlayers.size+1,color=[0x39a9ff,0x52c878,0xf2c14e,0xb58cff][(networkPlayers.size)%4];
-   networkPlayers.set(conn.peer,{conn,slot,color,mesh:null,state:networkSpawn(slot)});
+   const spawn=networkSpawn(slot);
+   networkPlayers.set(conn.peer,{conn,slot,color,mesh:null,state:spawn});
+   createRemoteCar(conn.peer,color);
+   networkPlayers.get(conn.peer).target=spawn;
    conn.send({type:'welcome',slot,host:currentNetworkState(),players:Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,p])=>[id,p.state||{}]))});
    setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));
   }else if(data.type==='state'){
@@ -887,7 +890,7 @@ async function joinMultiplayerRoom(){
     if(data.type==='welcome'){
      networkSlot=data.slot;setLocalNetworkSpawn(networkSlot);
      for(const [id,state] of Object.entries(data.players||{})){createRemoteCar(id,state.color);networkPlayers.get(id).target=state;}
-     networkActive=true;setRoomStatus('roomJoinStatus','Connected! Joining the drive…');
+     networkActive=true;setNetworkHud('ROOM '+networkRoomCode+' · CONNECTED');setRoomStatus('roomJoinStatus','Connected! Joining the drive…');
      launchGame();
     }else if(data.type==='snapshot'){applyNetworkSnapshot(data.players);}
    });
@@ -936,7 +939,7 @@ document.getElementById('createRoomBtn').addEventListener('click',createMultipla
 document.getElementById('joinRoomBtn').addEventListener('click',joinMultiplayerRoom);
 document.getElementById('joinRoomCode').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,'').slice(0,6);});
 document.getElementById('copyRoomCodeBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(networkRoomCode);setRoomStatus('roomHostStatus','Room key copied · waiting for friends…');}catch(_){setRoomStatus('roomHostStatus','Room key: '+networkRoomCode);}});
-document.getElementById('startRoomGameBtn').addEventListener('click',()=>{networkActive=true;networkSlot=0;setLocalNetworkSpawn(0);launchGame();});
+document.getElementById('startRoomGameBtn').addEventListener('click',()=>{networkActive=true;networkSlot=0;setLocalNetworkSpawn(0);setNetworkHud('ROOM '+networkRoomCode+' · '+(networkPlayers.size+1)+' / 5 PLAYERS');launchGame();});
 
 document.getElementById('startBtn').addEventListener('click',launchGame);
 document.getElementById('chooseCarBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='flex';});
