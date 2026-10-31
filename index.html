@@ -799,8 +799,9 @@ function setRoomStatus(id,message){const el=document.getElementById(id);if(el)el
 function setNetworkHud(message){networkHud.textContent=message;networkHud.style.display=message?'block':'none';}
 function makeRoomCode(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let code='';for(let i=0;i<6;i++)code+=chars[Math.floor(Math.random()*chars.length)];return code;}
 function networkSpawn(slot){
- const z=10, x=roadX(z)+7.2+slot*2.35;
- return {x,y:roadY(z),z:worldZ(z),yaw:roadHeading(z)};
+ // Place every new car beside the host's current position, perpendicular to its heading.
+ const sideX=Math.cos(yaw), sideZ=-Math.sin(yaw), spacing=2.35*slot;
+ return {x:car.position.x+sideX*spacing,y:car.position.y,z:car.position.z+sideZ*spacing,yaw};
 }
 function setLocalNetworkSpawn(slot){
  const p=networkSpawn(slot);car.position.set(p.x,p.y,p.z);yaw=p.yaw;car.rotation.set(0,yaw,0);
@@ -890,6 +891,7 @@ async function joinMultiplayerRoom(){
     if(data.type==='full'){setRoomStatus('roomJoinStatus','Room is full (maximum 5 players).');networkHostConn.close();return;}
     if(data.type==='welcome'){
      networkSlot=data.slot;setLocalNetworkSpawn(networkSlot);
+     if(data.host){createRemoteCar('host',data.host.color);networkPlayers.get('host').target=data.host;}
      for(const [id,state] of Object.entries(data.players||{})){createRemoteCar(id,state.color);networkPlayers.get(id).target=state;}
      networkActive=true;setNetworkHud('ROOM '+networkRoomCode+' · CONNECTED');setRoomStatus('roomJoinStatus','Connected! Joining the drive…');
      launchGame();
