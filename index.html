@@ -349,17 +349,20 @@ function makeStrip(width,y,material,offset=0){
 // Continuous terrain corridor follows the road elevation and blends into broad rolling hills.
 // This replaces the old flat plane, which left the raised mountain road visibly floating.
 function terrainHeight(x,z){
- const center=roadX(z), distance=Math.abs(x-center), elevation=roadY(z);
- const shoulderBlend=Math.exp(-distance/58);
- const rolling=1.15*Math.sin(x*.027+z*.009)+.7*Math.sin(x*.061-z*.017)+.35*Math.cos(z*.025+x*.018);
- const roadsideCut=distance<roadWidth/2+1.8 ? -.20 : 0;
- return elevation*shoulderBlend+rolling*(1-shoulderBlend)+roadsideCut;
+ const center=roadX(z),distance=Math.abs(x-center),elevation=roadY(z);
+ const mountainBlend=smooth(255,370,z)*(1-smooth(690,875,z));
+ const cliffBlend=smooth(6,58,distance);
+ const ridgeDrop=mountainBlend*cliffBlend*Math.max(0,elevation-1.2);
+ const rolling=1.45*Math.sin(x*.021+z*.010)+.82*Math.sin(x*.047-z*.014)+.42*Math.cos(z*.027+x*.019);
+ const forestBlend=1-mountainBlend;
+ const roadShoulder=(1-smooth(4.2,9.5,distance))*.22;
+ return elevation-ridgeDrop+rolling*(.22+forestBlend*.78)-roadShoulder;
 }
 {
- const xMin=-260,xMax=260,zMin=routeStart,zMax=trackLength,stepX=10,stepZ=8;
+ const xMin=-340,xMax=340,zMin=routeStart,zMax=trackLength,stepX=6,stepZ=6;
  const cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zMax-zMin)/stepZ),verts=[],indices=[];
  for(let iz=0;iz<=rows;iz++){
-  const rz=Math.min(zMax,zMin+iz*stepZ), wz=worldZ(rz);
+  const rz=Math.min(zMax,zMin+iz*stepZ),wz=worldZ(rz);
   for(let ix=0;ix<=cols;ix++){
    const x=Math.min(xMax,xMin+ix*stepX);
    verts.push(x,terrainHeight(x,rz),wz);
@@ -387,13 +390,45 @@ function tree(x,y,z,s=1){
   for(let i=0;i<3;i++){const cone=new THREE.Mesh(new THREE.ConeGeometry((1.05-i*.19)*s,1.55*s,5),leafMats[(Math.random()*leafMats.length)|0]);cone.position.y=(1.5+i*.64)*s;g.add(cone);}
   g.position.set(x,y,z);scene.add(g);
 }
-for(let z=routeStart;z<trackLength;z+=7){
-  const cx=roadX(z), zz=worldZ(z);
-  const villageZone=z>950&&z<1160;
-  for(const side of [-1,1]){
-    if(!villageZone&&Math.random()<.94)tree(cx+side*(5.8+Math.random()*13),roadY(z)-.1,zz+(Math.random()-.5)*4,.7+Math.random()*1.05);
-    if(!villageZone&&z%20===0){const post=new THREE.Mesh(new THREE.BoxGeometry(.10,.72,.10),white);post.position.set(cx+side*4.0,.36+roadY(z),zz);scene.add(post);}
+// Dense multi-row forest rendered with instancing to keep draw calls low.
+{
+ const forestRows=[8,15,23,33,46,62],zStep=10;
+ const zCount=Math.ceil((trackLength-routeStart)/zStep),count=zCount*forestRows.length*2;
+ const dummy=new THREE.Object3D();
+ const trunkGeo=new THREE.CylinderGeometry(.16,.25,1.9,5);
+ const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12,1.9,6),new THREE.ConeGeometry(.82,1.65,6)];
+ const trunkInstances=new THREE.InstancedMesh(trunkGeo,trunkMat,count);
+ const crownInstances=leafMats.map((m,i)=>new THREE.InstancedMesh(crownGeos[i],m,count));
+ let index=0;
+ for(let z=routeStart;z<trackLength;z+=zStep){
+  if(z>950&&z<1160)continue;
+  const center=roadX(z),zz=worldZ(z);
+  for(const side of [-1,1])for(let row=0;row<forestRows.length;row++){
+   const distance=forestRows[row]+(Math.random()-.5)*3.5;
+   const x=center+side*distance+(Math.random()-.5)*4,groundY=terrainHeight(x,z),scale=.82+Math.random()*.72;
+   dummy.position.set(x,groundY+.95*scale,zz+(Math.random()-.5)*5);
+   dummy.rotation.set(0,Math.random()*Math.PI*2,0);dummy.scale.set(scale,scale,scale);dummy.updateMatrix();
+   trunkInstances.setMatrixAt(index,dummy.matrix);
+   const crownHeights=[2.0,2.82,3.55];
+   for(let layer=0;layer<3;layer++){
+    dummy.position.set(x,groundY+crownHeights[layer]*scale,zz+(Math.random()-.5)*5);
+    dummy.rotation.set(0,Math.random()*Math.PI*2,0);dummy.scale.set(scale,scale,scale);dummy.updateMatrix();
+    crownInstances[layer].setMatrixAt(index,dummy.matrix);
+   }
+   index++;
   }
+ }
+ trunkInstances.count=index;trunkInstances.instanceMatrix.needsUpdate=true;scene.add(trunkInstances);
+ for(const inst of crownInstances){inst.count=index;inst.instanceMatrix.needsUpdate=true;scene.add(inst);}
+}
+// Reflective roadside posts continue along the approach and mountain route.
+for(let z=routeStart;z<trackLength;z+=24){
+ if(z>950&&z<1160)continue;
+ const cx=roadX(z),zz=worldZ(z);
+ for(const side of [-1,1]){
+  const post=new THREE.Mesh(new THREE.BoxGeometry(.12,.82,.12),white);
+  post.position.set(cx+side*4.15,roadY(z)+.41,zz);scene.add(post);
+ }
 }
 // distant mountains
 for(let i=0;i<18;i++){
@@ -417,34 +452,34 @@ function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
 }
 // Coordinates are relative to the road centre, so the station follows this road section.
 const stationGroup=new THREE.Group();stationGroup.position.set(stationRoadX,stationY,stationWorldZ);fuelStop.add(stationGroup);
-// Wide paved lot and a long tapered-looking connector apron from the road shoulder.
-stationBox(23,.12,25,concreteMat,16.5,.02,0,stationGroup);
-stationBox(13,.10,18,asphaltMat,8.2,.01,0,stationGroup);
-// painted forecourt edge and entrance guides
-for(const z of [-10.5,10.5]){
- stationBox(14,.035,.16,white,9,.095,z,stationGroup);
+// Large paved service area and a wide connector apron from the road shoulder.
+stationBox(60,.20,46,concreteMat,30,.02,0,stationGroup);
+stationBox(19,.14,34,asphaltMat,10.5,.035,0,stationGroup);
+stationBox(25,.10,24,asphaltMat,24,.045,0,stationGroup);
+for(const z of [-20,20])stationBox(52,.035,.20,white,30,.135,z,stationGroup);
+for(const x of [7,13,43,49])stationBox(.13,.035,30,yellowMat,x,.145,0,stationGroup);
+// Expanded convenience store.
+stationBox(12,4.4,9,white,48,2.22,-12,stationGroup);
+stationBox(12.3,.38,9.3,redMat,48,4.58,-12,stationGroup);
+stationBox(7.2,2.1,.12,glassShopMat,46,2.65,-7.42,stationGroup);
+stationBox(2.0,2.1,.14,dark,51,2.65,-7.40,stationGroup);
+stationBox(12.1,.18,9.2,dark,48,4.84,-12,stationGroup);
+// Broad canopy with six pillars.
+stationBox(29,.38,18,canopyMat,26,5.45,2,stationGroup);
+stationBox(29.5,.16,18.5,redMat,26,5.18,2,stationGroup);
+for(const x of [12.5,39.5])for(const z of [-5.2,9.2])stationBox(.28,5.1,.28,white,x,2.65,z,stationGroup);
+// Four fuel dispensers with displays and hose details.
+for(const [x,colorMat] of [[16,fuelRedMat],[23,fuelBlueMat],[30,fuelRedMat],[37,fuelBlueMat]]){
+ stationBox(1.45,2.0,1.05,colorMat,x,1.12,2,stationGroup);
+ stationBox(.98,.55,.08,dark,x,1.48,2.57,stationGroup);
+ stationBox(.22,.92,.14,tireMat,x+.72,1.05,2.12,stationGroup);
+ stationBox(.12,.72,.12,white,x+.76,.95,1.92,stationGroup);
+ stationBox(1.1,.10,.12,yellowMat,x,2.18,2.55,stationGroup);
 }
-stationBox(13,.025,.16,yellowMat,8,.09,-7.5,stationGroup);
-// compact shop building at the back of the lot
-stationBox(7,3.2,6,white,23,1.65,-5.5,stationGroup);
-stationBox(7.15,.28,6.15,redMat,23,3.35,-5.5,stationGroup);
-stationBox(3.8,1.65,.10,glassShopMat,23,1.85,-2.43,stationGroup);
-stationBox(1.3,1.2,.13,dark,25.1,1.65,-2.35,stationGroup);
-// flat canopy with four support pillars
-stationBox(10,.28,9,canopyMat,12.5,4.1,1.2,stationGroup);
-stationBox(10.2,.12,9.2,redMat,12.5,3.91,1.2,stationGroup);
-for(const x of [8.2,16.8])for(const z of [-2.2,4.6])stationBox(.18,3.8,.18,white,x,1.95,z,stationGroup);
-// two fuel pumps, each with a bright display and hose-like dark side strip
-for(const [x,colorMat] of [[10.1,fuelRedMat],[14.3,fuelBlueMat]]){
- stationBox(1.05,1.65,.85,colorMat,x,1.0,1.1,stationGroup);
- stationBox(.72,.42,.06,dark,x,1.25,1.54,stationGroup);
- stationBox(.18,.72,.12,tireMat,x+.52,.95,1.12,stationGroup);
- stationBox(.1,.55,.1,white,x+.55,.92,.92,stationGroup);
-}
-// roadside sign with a simple readable FUEL panel
-stationBox(.22,3.4,.22,dark,27,1.7,5.8,stationGroup);
-stationBox(3.6,1.65,.28,signMat,27,3.35,5.8,stationGroup);
-stationBox(3.2,.12,.06,yellowMat,27,3.72,5.64,stationGroup);
+// Large roadside pylon.
+stationBox(.32,5.2,.32,dark,58,2.6,13,stationGroup);
+stationBox(5.4,2.6,.42,signMat,58,4.3,13,stationGroup);
+stationBox(4.8,.16,.08,yellowMat,58,5.35,12.76,stationGroup);
 function stationText(textValue,x,y,z,size,color){
  const c=document.createElement('canvas');c.width=512;c.height=160;
  const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
@@ -453,7 +488,8 @@ function stationText(textValue,x,y,z,size,color){
  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(size,size*.31),new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide}));
  mesh.position.set(x,y,z);stationGroup.add(mesh);
 }
-stationText('FUEL',27,3.35,5.63,3.0,'#ffffff');
+stationText('FUEL',58,4.3,12.77,4.1,'#ffffff');
+stationText('24/7 MART',48,3.55,-7.32,2.5,'#ffffff');stationText('FUEL',27,3.35,5.63,3.0,'#ffffff');
 // stylized car model
 
 // Mountain rock faces and ridgelines frame the high switchback section.
@@ -569,7 +605,7 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const up=e=>{e.preventDefault();touchInput[name]=false;syncControl(name);el.classList.remove('active');};
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
-let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, paused=true, started=false, last=performance.now();
+let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, verticalVelocity=0, grounded=true, airtime=0, paused=true, started=false, last=performance.now();
 
 // Lightweight synthesized car audio: no mismatched external sound clips.
 let audioEnabled=true, audioReady=false, audioCtx=null, engineOsc1=null, engineOsc2=null, engineFilter=null, engineGain=null, engineHarmonic=null, harmonicGain=null, tireNoise=null, tireFilter=null, tireGain=null, lastSquealAt=0;
@@ -629,7 +665,7 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){clearControlSources();speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;driftAmount=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function reset(){clearControlSources();speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;driftAmount=0;verticalVelocity=0;grounded=true;airtime=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
 function togglePause(){if(!started||paused)return;paused=true;clearControlSources();settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
 document.getElementById('resetBtn').addEventListener('click',()=>{reset();settingsPanel.classList.remove('open');if(started)paused=false;});
 const cameraBtn=document.getElementById('cameraBtn');
@@ -738,7 +774,7 @@ function update(dt){
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
- const inFuelForecourt=Math.abs(trackZ()-stationZ)<13&&roadOffset>5&&roadOffset<28;
+ const inFuelForecourt=Math.abs(trackZ()-stationZ)<23&&roadOffset>4&&roadOffset<61;
  const onRoad=Math.abs(roadOffset)<roadWidth/2||inFuelForecourt;
  const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
  const vx=speed, absVx=Math.abs(vx);
@@ -859,7 +895,27 @@ function update(dt){
  }
  z=THREE.MathUtils.clamp(z,0,trackLength);
  const offset=car.position.x-roadX(z);
- car.position.y=roadY(z);
+ const onPavedForecourt=Math.abs(z-stationZ)<23&&offset>4&&offset<61;
+ const onDriveSurface=Math.abs(offset)<roadWidth/2||onPavedForecourt;
+ const terrainY=(Math.abs(car.position.x)>338||trackZ()<routeStart||trackZ()>trackLength)?-65:terrainHeight(car.position.x,z)+.08;
+ const supportY=onDriveSurface?roadY(z)+.02:terrainY;
+ // Vertical rigid-body solver: gravity takes over whenever the supporting surface drops away.
+ if(grounded){
+  if(supportY>=car.position.y-.16){car.position.y=supportY;verticalVelocity=0;airtime=0;}
+  else{grounded=false;airtime=0;showToast('OFF THE EDGE · FALLING');}
+ }
+ if(!grounded){
+  verticalVelocity-=9.81*dt;
+  car.position.y+=verticalVelocity*dt;
+  airtime+=dt;
+  if(car.position.y<=supportY){
+   const impactSpeed=Math.abs(verticalVelocity);
+   car.position.y=supportY;verticalVelocity=0;grounded=true;
+   if(impactSpeed>7){speed*=THREE.MathUtils.clamp(1-impactSpeed*.025,.58,.9);lateralSpeed*=.45;showToast(impactSpeed>15?'HARD LANDING · SUSPENSION HIT':'LANDED');}
+   airtime=0;
+  }
+  if(car.position.y < -45){showToast('VEHICLE LOST · RESETTING');reset();z=10;}
+ }
  car.rotation.y=yaw;
  // Front tyre visuals must point the same way as the steering rack in both D and R.
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
@@ -873,11 +929,11 @@ if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
 }
  // Body roll builds with lateral acceleration (and therefore usually with speed), but remains restrained.
  const rollScale=THREE.MathUtils.smoothstep(Math.abs(speed),2,24);
- const targetRoll=THREE.MathUtils.clamp(-lateralG*0.085*rollScale,-0.055,0.055);
+ const targetRoll=grounded?THREE.MathUtils.clamp(-lateralG*0.085*rollScale,-0.055,0.055):THREE.MathUtils.clamp(-yawRate*.16,-.30,.30);
  // Reduce pitch under braking so the hood does not jump into the hood-camera view.
- const targetPitch=THREE.MathUtils.clamp(-longitudinalAccel*0.0025,-0.018,0.018);
- car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,3.5,dt);
- car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,3.0,dt);
+ const targetPitch=grounded?THREE.MathUtils.clamp(-longitudinalAccel*0.0025,-0.018,0.018):THREE.MathUtils.clamp(-verticalVelocity*.018,-.32,.32);
+ car.rotation.z=THREE.MathUtils.damp(car.rotation.z,targetRoll,grounded?3.5:1.35,dt);
+ car.rotation.x=THREE.MathUtils.damp(car.rotation.x,targetPitch,grounded?3.0:1.25,dt);
  if(wheelAssemblies)for(const w of wheelAssemblies){
    const isFront=w.userData.axle==='front';
    const targetY=0.48+(isFront?-targetPitch:targetPitch)*1.7;
@@ -919,6 +975,7 @@ if(audioEnabled&&hardSlide&&nowAudio-lastSquealAt>2400){
  camera.lookAt(target);
  updateGameAudio();
  speedEl.textContent=String(Math.round(Math.abs(speed)*3.6)).padStart(3,'0');
+ if(!grounded&&airtime>.15)gearEl.textContent='AIR · '+Math.round(airtime*10)/10+'s';
  gearEl.textContent=driveMode==='R'?'R · REVERSE':driveMode==='N'?'N · NEUTRAL':(Math.abs(speed)<0.5?'D · IDLE':Math.abs(speed)<8?'D1 · DRIVE':Math.abs(speed)<20?'D2 · DRIVE':'D3 · DRIVE');
 }
 function loop(now){const dt=Math.min(.035,(now-last)/1000||0);last=now;update(dt);renderer.render(scene,camera);requestAnimationFrame(loop)}
