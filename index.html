@@ -178,6 +178,20 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
  .steering-wheel-wrap{width:clamp(145px,39vw,190px)!important;height:clamp(145px,39vw,190px)!important;flex:0 0 auto}
 }
 
+
+/* Settings reference: scrollable on short screens and readable on desktop/mobile. */
+.settings-panel{overflow-y:auto;align-items:flex-start;padding:16px}
+.settings-panel .panel{width:min(680px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;margin:auto}
+.settings-panel .panel h1{font-size:clamp(32px,6vw,46px)}
+.controls-reference{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.control-card{border:1px solid #ffffff20;background:#ffffff08;border-radius:14px;padding:13px;min-width:0}
+.control-card h2{font-size:12px;letter-spacing:.12em;color:var(--accent);margin:0 0 10px}
+.control-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #ffffff12;font-size:12px;color:#dce5ed}
+.control-row:last-child{border-bottom:0}
+.control-row strong{color:#fff;text-align:right}
+.control-footnote{font-size:11px!important;color:#aab8c8!important;margin:8px 0}
+@media(max-width:560px){.controls-reference{grid-template-columns:1fr}.settings-panel{padding:10px}.settings-panel .panel{padding:18px;max-height:calc(100dvh - 20px)}}
+
 </style>
 </head>
 <body>
@@ -189,7 +203,7 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   </div>
   <div class="center" id="roadLabel">HILLSIDE RUN · FREE DRIVE</div>
   <div class="bottom">
-    <div class="hint">WASD / ARROWS to drive · SPACE to brake · R to reset</div>
+    <div class="hint">WASD / ARROWS to drive · SPACE handbrake · 1/2/3 gears · C camera · V sport · R reset</div>
     <div class="actions"></div>
   </div>
 </div>
@@ -220,9 +234,32 @@ canvas{display:block;width:100%;height:100%}#game{position:fixed;inset:0}
   <div class="panel">
     <div class="eyebrow">DRIVING PREFERENCES</div>
     <h1>Settings</h1>
-    <p>Choose how you want to steer. Your accelerator, brake, handbrake and gear controls remain available.</p>
+    <p>Choose your mobile steering style and check the complete controls for both PC and Android.</p>
     <div class="settings-actions"><button class="btn" id="buttonSteeringBtn">‹ › BUTTONS</button><button class="btn" id="wheelSteeringBtn">◉ WHEEL</button></div>
     <p class="settings-note" id="steeringModeNote">Steering mode: buttons</p>
+    <div class="controls-reference">
+      <section class="control-card"><h2>PC · KEYBOARD</h2>
+        <div class="control-row"><span>Accelerate</span><strong>W / ↑</strong></div>
+        <div class="control-row"><span>Brake</span><strong>S / ↓</strong></div>
+        <div class="control-row"><span>Steer</span><strong>A / ← · D / →</strong></div>
+        <div class="control-row"><span>Handbrake / drift</span><strong>SPACE</strong></div>
+        <div class="control-row"><span>Drive / Neutral / Reverse</span><strong>1 / 2 / 3</strong></div>
+        <div class="control-row"><span>Change camera</span><strong>C</strong></div>
+        <div class="control-row"><span>Sports mode</span><strong>V</strong></div>
+        <div class="control-row"><span>Reset car</span><strong>R</strong></div>
+        <div class="control-row"><span>Pause / Settings</span><strong>ESC</strong></div>
+      </section>
+      <section class="control-card"><h2>ANDROID · TOUCH</h2>
+        <div class="control-row"><span>Steering</span><strong>‹ › buttons or wheel</strong></div>
+        <div class="control-row"><span>Accelerate</span><strong>GAS ▲</strong></div>
+        <div class="control-row"><span>Brake</span><strong>BRAKE</strong></div>
+        <div class="control-row"><span>Drift</span><strong>↗ Handbrake</strong></div>
+        <div class="control-row"><span>Gear</span><strong>D / N / R selector</strong></div>
+        <div class="control-row"><span>Camera / Sport</span><strong>▣ / S top buttons</strong></div>
+        <div class="control-row"><span>Pause / Settings</span><strong>Ⅱ top button</strong></div>
+      </section>
+    </div>
+    <p class="control-footnote">Gear changes are accepted only below 8 km/h. On PC, use 1, 2 and 3 to select D, N and R. Keyboard controls work independently of the Android touch controls.</p>
     <div class="settings-actions utility-actions"><button class="btn" id="resetBtn">↻ RESET CAR</button><button class="btn" id="soundBtn" aria-label="Toggle game audio">🔊 SOUND ON</button></div>
     <button class="btn" id="closeSettingsBtn">RESUME DRIVING</button>
   </div>
@@ -450,6 +487,13 @@ const shadow=new THREE.Mesh(new THREE.CircleGeometry(1.7,16),new THREE.MeshBasic
 car.position.set(roadX(10)+7.2,roadY(10), -trackLength/2+10);
 
 const input={left:false,right:false,gas:false,brake:false,handbrake:false};
+const keyboardInput={left:false,right:false,gas:false,brake:false,handbrake:false};
+const touchInput={left:false,right:false,gas:false,brake:false,handbrake:false};
+function syncControl(name){input[name]=!!(keyboardInput[name]||touchInput[name]);}
+function clearControlSources(){
+ for(const name of Object.keys(input)){keyboardInput[name]=false;touchInput[name]=false;input[name]=false;}
+ document.querySelectorAll('[data-control]').forEach(el=>el.classList.remove('active'));
+}
 let sportsMode=false;
 const sportsModeBtn=document.getElementById("sportsModeBtn");
 function toggleSportsMode(){sportsMode=!sportsMode;sportsModeBtn.textContent=sportsMode?"SPORT: ON":"SPORT: OFF";sportsModeBtn.setAttribute("aria-pressed",String(sportsMode));sportsModeBtn.style.background=sportsMode?"rgba(156,255,87,.92)":"var(--glass)";sportsModeBtn.style.color=sportsMode?"#14220e":"#fff";showToast(sportsMode?"SPORT MODE · EXTRA POWER":"NORMAL MODE");}
@@ -457,12 +501,44 @@ sportsModeBtn.addEventListener("click",toggleSportsMode);
 let driveMode="D"; // D = forward, N = neutral, R = reverse
 let steeringMode="buttons", wheelAngle=0, wheelReturnVelocity=0, wheelPointerActive=false;
 const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'gas',w:'gas',W:'gas',ArrowDown:'brake',s:'brake',S:'brake',' ':'handbrake'};
-addEventListener('keydown',e=>{if(keyMap[e.key]){input[keyMap[e.key]]=true;e.preventDefault()}if(e.key.toLowerCase()==='r')reset();if(e.key==='Escape')togglePause()});
-addEventListener('keyup',e=>{if(keyMap[e.key])input[keyMap[e.key]]=false});
+const gearKeys={'1':'D','2':'N','3':'R'};
+function isTypingTarget(target){return !!(target&&target.closest&&target.closest('input,textarea,select,[contenteditable="true"]'));}
+function selectGear(next){
+ if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}
+ if(next==='N')speed=0;
+ driveMode=next;
+ document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));
+ syncGearButton();showToast('GEAR '+driveMode);
+}
+addEventListener('keydown',e=>{
+ if(isTypingTarget(e.target))return;
+ if(e.key==='Escape'){
+  e.preventDefault();
+  if(settingsPanel.classList.contains('open')){settingsPanel.classList.remove('open');if(started){paused=false;showToast('BACK ON THE ROAD');}}
+  else if(started&&!paused)togglePause();
+  return;
+ }
+ const control=keyMap[e.key];
+ if(control){e.preventDefault();if(!e.repeat){keyboardInput[control]=true;syncControl(control);}return;}
+ if(e.repeat)return;
+ if(gearKeys[e.key]){e.preventDefault();selectGear(gearKeys[e.key]);return;}
+ switch(e.key.toLowerCase()){
+  case 'r': reset();break;
+  case 'c': cycleCamera();break;
+  case 'v': toggleSportsMode();break;
+ }
+});
+addEventListener('keyup',e=>{
+ const control=keyMap[e.key];
+ if(control){keyboardInput[control]=false;syncControl(control);e.preventDefault();}
+});
+function releaseAllInputs(){clearControlSources();}
+addEventListener('blur',releaseAllInputs);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseAllInputs();});
 document.querySelectorAll('[data-control]').forEach(el=>{
  const name=el.dataset.control;
- const down=e=>{e.preventDefault();input[name]=true;el.classList.add('active');try{el.setPointerCapture(e.pointerId)}catch{}};
- const up=e=>{e.preventDefault();input[name]=false;el.classList.remove('active')};
+ const down=e=>{e.preventDefault();touchInput[name]=true;syncControl(name);el.classList.add('active');try{el.setPointerCapture(e.pointerId)}catch{}};
+ const up=e=>{e.preventDefault();touchInput[name]=false;syncControl(name);el.classList.remove('active');};
  el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, paused=true, started=false, last=performance.now();
@@ -525,8 +601,8 @@ const speedEl=document.getElementById('speed'), gearEl=document.getElementById('
 function showToast(s){toast.textContent=s;toast.style.opacity=1;clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,1400)}
 function trackZ(){return car.position.z+trackLength/2}
 function roadHeading(z){return Math.atan2(roadX(z+1)-roadX(z-1),2)}
-function reset(){speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;driftAmount=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
-function togglePause(){if(!started)return;paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
+function reset(){clearControlSources();speed=0;lateralSpeed=0;yawRate=0;rearWheelOmega=0;driftAmount=0;steeringAngle=0;wheelAngle=0;wheelReturnVelocity=0;wheelPointerActive=false;if(steeringWheel)steeringWheel.style.transform='rotate(0deg)';driveMode='D';syncGearButton();car.position.set(roadX(10)+7.2,roadY(10),-trackLength/2+10);yaw=roadHeading(10);car.rotation.set(0,yaw,0);showToast('CAR RESET')}
+function togglePause(){if(!started||paused)return;paused=true;clearControlSources();settingsPanel.classList.add('open');showToast('PAUSED · SETTINGS')}
 document.getElementById('resetBtn').addEventListener('click',()=>{reset();settingsPanel.classList.remove('open');if(started)paused=false;});
 const cameraBtn=document.getElementById('cameraBtn');
 function cycleCamera(){
@@ -576,7 +652,7 @@ function setSteeringMode(mode){
  input.left=false;input.right=false;wheelAngle=0;wheelReturnVelocity=0;steeringWheel.style.transform='rotate(0deg)';
  showToast('Steering: '+(mode==='wheel'?'wheel':'buttons'));
 }
-function openPauseSettings(){if(started){paused=true;input.gas=false;input.brake=false;input.left=false;input.right=false;input.handbrake=false;}settingsPanel.classList.add('open');}
+function openPauseSettings(){if(started){paused=true;clearControlSources();}settingsPanel.classList.add('open');}
 document.getElementById('settingsBtn').addEventListener('click',openPauseSettings);
 document.getElementById('mainSettingsBtn').addEventListener('click',()=>settingsPanel.classList.add('open'));
 document.getElementById('closeSettingsBtn').addEventListener('click',()=>{settingsPanel.classList.remove('open');if(started){paused=false;showToast('BACK ON THE ROAD');}});
@@ -611,7 +687,7 @@ steeringWheel.addEventListener('lostpointercapture',()=>{wheelPointerActive=fals
 function syncGearButton(){if(gearBtn)gearBtn.textContent='GEAR: '+driveMode;}
 function changeGear(){if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}driveMode=driveMode==='D'?'N':driveMode==='N'?'R':'D';if(driveMode==='N')speed=0;syncGearButton();showToast('GEAR '+driveMode);}
 gearBtn?.addEventListener('click',changeGear);
-document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>{const next=el.dataset.gear;if(Math.abs(speed)>2.2){showToast('Slow down below 8 km/h to change gear');return;}if(next==='N')speed=0;driveMode=next;document.querySelectorAll('[data-gear]').forEach(b=>b.classList.toggle('active',b.dataset.gear===driveMode));syncGearButton();showToast('GEAR '+driveMode);}));
+document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click',()=>selectGear(el.dataset.gear)));
 // Pause is opened through the on-screen settings button.
 async function launchGame(){
  const startScreen=document.getElementById('startScreen'),chooser=document.getElementById('carSelectScreen');
@@ -660,7 +736,8 @@ function update(dt){
  }
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
- const steerInput=steeringMode==='wheel'?-wheelAngle/450:((input.left?1:0)-(input.right?1:0));
+ const keyboardSteer=(keyboardInput.left?1:0)-(keyboardInput.right?1:0);
+  const steerInput=keyboardSteer!==0?keyboardSteer:(steeringMode==='wheel'?-wheelAngle/450:((touchInput.left?1:0)-(touchInput.right?1:0)));
  // Faster steering rack response with a speed-sensitive rate limit.
  const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
