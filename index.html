@@ -853,7 +853,8 @@ function hostHandleConnection(conn){
    networkPlayers.set(conn.peer,{conn,slot,color,mesh:null,state:spawn});
    createRemoteCar(conn.peer,color);
    networkPlayers.get(conn.peer).target=spawn;
-   conn.send({type:'welcome',slot,host:currentNetworkState(),players:Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,p])=>[id,p.state||{}]))});
+   networkPlayers.get(conn.peer).state=spawn;
+   conn.send({type:'welcome',slot,host:currentNetworkState(),players:Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,p])=>[id,{...(p.state||networkSpawn(p.slot)),color:p.color}]))});
    setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));
   }else if(data.type==='state'){
    const p=networkPlayers.get(conn.peer);if(p)p.state=data.state;
@@ -931,7 +932,7 @@ async function launchGame(){
  const startScreen=document.getElementById('startScreen'),chooser=document.getElementById('carSelectScreen');
  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();if(screen.orientation&&screen.orientation.lock){try{await screen.orientation.lock('landscape')}catch(_){}}}catch(_){showToast('Starting game · fullscreen may be restricted by browser');}
  started=true;paused=false;initGameAudio();syncAudioState();yaw=roadHeading(trackZ());car.rotation.y=yaw;
- startScreen.style.display='none';chooser.style.display='none';last=performance.now();
+ startScreen.style.display='none';chooser.style.display='none';document.getElementById('multiplayerScreen').style.display='none';last=performance.now();
 }
 document.getElementById('multiplayerBtn').addEventListener('click',()=>{document.getElementById('multiplayerScreen').style.display='flex';});
 document.getElementById('backFromMultiplayerBtn').addEventListener('click',()=>{document.getElementById('multiplayerScreen').style.display='none';});
