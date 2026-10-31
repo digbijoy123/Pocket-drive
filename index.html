@@ -346,8 +346,7 @@ function makeStrip(width,y,material,offset=0){
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;mesh.frustumCulled=false;scene.add(mesh);
 }
-// Continuous terrain corridor follows the road elevation and blends into broad rolling hills.
-// This replaces the old flat plane, which left the raised mountain road visibly floating.
+// Keep the terrain physically below the complete road corridor and station forecourt.
 function terrainHeight(x,z){
  const center=roadX(z),distance=Math.abs(x-center),elevation=roadY(z);
  const mountainBlend=smooth(255,370,z)*(1-smooth(690,875,z));
@@ -355,8 +354,18 @@ function terrainHeight(x,z){
  const ridgeDrop=mountainBlend*cliffBlend*Math.max(0,elevation-1.2);
  const rolling=1.45*Math.sin(x*.021+z*.010)+.82*Math.sin(x*.047-z*.014)+.42*Math.cos(z*.027+x*.019);
  const forestBlend=1-mountainBlend;
- const roadShoulder=(1-smooth(4.2,9.5,distance))*.22;
- return elevation-ridgeDrop+rolling*(.22+forestBlend*.78)-roadShoulder;
+ const naturalHeight=elevation-ridgeDrop+rolling*(.22+forestBlend*.78);
+ const roadBedBlend=1-smooth(3.7,11.5,distance);
+ const roadBed=elevation-.34;
+ let height=THREE.MathUtils.lerp(naturalHeight,Math.min(naturalHeight,roadBed),roadBedBlend);
+ // Flatten the complete 60 x 46 m station footprint, with a 5 m transition apron.
+ const sx=x-stationRoadX, sz=z-stationZ;
+ const outsideX=Math.max(-sx,sx-60,0), outsideZ=Math.max(Math.abs(sz)-23,0);
+ const outside=Math.max(outsideX,outsideZ);
+ const stationBlend=1-smooth(0,5,outside);
+ const stationGround=stationY-.22;
+ height=THREE.MathUtils.lerp(height,Math.min(height,stationGround),stationBlend);
+ return height;
 }
 {
  const xMin=-340,xMax=340,zMin=routeStart,zMax=trackLength,stepX=6,stepZ=6;
@@ -380,7 +389,7 @@ makeStrip(roadWidth,.055,roadMat);
 // Continuous road markings also run through the approach behind the player spawn.
 for(let z=routeStart;z<trackLength;z+=10){
  const x=roadX(z),zz=worldZ(z),dash=new THREE.Mesh(new THREE.BoxGeometry(.13,.045,4.6),lineMat);
- dash.position.set(x,roadY(z)+.105,zz);dash.rotation.y=Math.atan2(roadX(z+1)-roadX(z-1),2);scene.add(dash);
+ dash.position.set(x,roadY(z)+.135,zz);dash.rotation.y=Math.atan2(roadX(z+1)-roadX(z-1),2);scene.add(dash);
 }
 // roadside posts and stylized low-poly hills/trees
 const trunkMat=mat(0x76543a), leafMats=[mat(0x347a54),mat(0x4c965c),mat(0x7db85e)], rockMat=mat(0x87939a);
@@ -452,10 +461,10 @@ function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
 }
 // Coordinates are relative to the road centre, so the station follows this road section.
 const stationGroup=new THREE.Group();stationGroup.position.set(stationRoadX,stationY,stationWorldZ);fuelStop.add(stationGroup);
-// Large paved service area and a wide connector apron from the road shoulder.
+// One level concrete foundation with a continuous asphalt drive-in apron.
 stationBox(60,.20,46,concreteMat,30,.02,0,stationGroup);
-stationBox(19,.14,34,asphaltMat,10.5,.035,0,stationGroup);
-stationBox(25,.10,24,asphaltMat,24,.045,0,stationGroup);
+stationBox(19,.14,34,asphaltMat,10.5,.175,0,stationGroup);
+stationBox(25,.10,24,asphaltMat,24,.175,0,stationGroup);
 for(const z of [-20,20])stationBox(52,.035,.20,white,30,.135,z,stationGroup);
 for(const x of [7,13,43,49])stationBox(.13,.035,30,yellowMat,x,.145,0,stationGroup);
 // Expanded convenience store.
