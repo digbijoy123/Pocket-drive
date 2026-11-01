@@ -356,6 +356,14 @@ function roadY(z){
    12*smooth(690,970,z)-13*smooth(970,1170,z)+
    9*smooth(1260,1480,z);
 }
+// Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
+function terrainHeight(x,z){
+ const distance=Math.abs(x-roadX(z));
+ const shoulder=roadY(z)-1.15+Math.min(distance,90)*0.018;
+ const rolling=Math.sin(x*0.031+z*0.017)*1.35+Math.sin(x*0.014-z*0.023)*1.05;
+ const hillside=Math.sin(z*0.006+x*0.004)*1.8;
+ return shoulder+rolling+hillside;
+}
 const worldZ=z=>z-trackLength/2;
 // Streamed world: only a small window of terrain, road and forest exists around the player.
 const WORLD_CHUNK_LENGTH=180, WORLD_CHUNKS_BEHIND=2, WORLD_CHUNKS_AHEAD=3;
