@@ -357,12 +357,21 @@ function roadY(z){
    9*smooth(1260,1480,z);
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
+function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
+function roadNormal(z){
+ const inv=1/Math.sqrt(1+roadSlope(z)*roadSlope(z));
+ return {x:inv,z:-roadSlope(z)*inv};
+}
 function terrainHeight(x,z){
- const distance=Math.abs(x-roadX(z));
- const shoulder=roadY(z)-1.15+Math.min(distance,90)*0.018;
- const rolling=Math.sin(x*0.031+z*0.017)*1.35+Math.sin(x*0.014-z*0.023)*1.05;
- const hillside=Math.sin(z*0.006+x*0.004)*1.8;
- return shoulder+rolling+hillside;
+ const normal=roadNormal(z),dx=x-roadX(z);
+ const lateralDistance=Math.abs(dx*normal.x);
+ const shoulder=roadY(z)-1.35+Math.min(lateralDistance,90)*0.018;
+ const rolling=Math.sin(x*0.031+z*0.017)*1.15+Math.sin(x*0.014-z*0.023)*.9;
+ const hillside=Math.sin(z*0.006+x*0.004)*1.55;
+ const natural=shoulder+rolling+hillside;
+ const roadBlend=1-THREE.MathUtils.smoothstep(lateralDistance,roadWidth/2+.75,roadWidth/2+10);
+ const belowRoad=Math.min(natural,roadY(z)-.5);
+ return THREE.MathUtils.lerp(natural,belowRoad,roadBlend);
 }
 const worldZ=z=>z-trackLength/2;
 // Streamed world: only a small window of terrain, road and forest exists around the player.
@@ -374,10 +383,9 @@ const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12
 const markingGeo=new THREE.BoxGeometry(.13,.045,4.6);
 const postGeo=new THREE.BoxGeometry(.12,.82,.12);
 function addChunkStrip(group,zStart,zEnd,width,y,material){
- const verts=[],indices=[],steps=Math.ceil((zEnd-zStart)/2);
+ const verts=[],indices=[],steps=Math.ceil((zEnd-zStart)/1);
  for(let i=0;i<=steps;i++){
-  const z=Math.min(zEnd,zStart+i*2),x=roadX(z),dx=(roadX(z+1)-roadX(z-1))/2,dy=(roadY(z+1)-roadY(z-1))/2;
-  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv,half=width/2,bank=dy*pz;
+  const z=Math.min(zEnd,zStart+i),x=roadX(z),normal=roadNormal(z),px=normal.x,pz=normal.z,half=width/2,dy=(roadY(z+1)-roadY(z-1))/2,bank=dy*pz;
   verts.push(x-px*half,y+roadY(z)+bank*half*.12,worldZ(z)-pz*half,
              x+px*half,y+roadY(z)-bank*half*.12,worldZ(z)+pz*half);
  }
@@ -389,7 +397,7 @@ function buildWorldChunk(index){
  const zStart=Math.max(routeStart,index*WORLD_CHUNK_LENGTH),zEnd=Math.min(trackLength,(index+1)*WORLD_CHUNK_LENGTH);
  if(zEnd<=zStart)return null;
  const group=new THREE.Group(),terrainVerts=[],terrainIndices=[];
- const xMin=-125,xMax=125,stepX=10,stepZ=8,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
+ const xMin=-125,xMax=125,stepX=8,stepZ=6,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
  for(let iz=0;iz<=rows;iz++){
   const z=Math.min(zEnd,zStart+iz*stepZ),wz=worldZ(z),center=roadX(z);
   for(let ix=0;ix<=cols;ix++){
@@ -586,7 +594,7 @@ car.position.set(roadX(10)-1.55,roadY(10), -trackLength/2+10);
 // Ambient AI traffic with randomized headways and mixed cruising speeds.
 const trafficCars=[];
 const trafficColors=[0x39a9ff,0xf2c14e,0x52c878,0xb58cff,0xe87945,0xd8dce2,0xe85d75,0x72c9bd];
-const TRAFFIC_TOTAL=13, TRAFFIC_ONCOMING=5;
+const TRAFFIC_TOTAL=14, TRAFFIC_ONCOMING=7;
 function createTrafficCar(index){
  const mesh=car.clone(true),color=trafficColors[index%trafficColors.length];
  mesh.traverse(obj=>{
@@ -599,7 +607,9 @@ function createTrafficCar(index){
  scene.add(mesh);
  const incoming=index<TRAFFIC_ONCOMING;
  const direction=incoming?-1:1;
- const lane=incoming?1.55:(Math.random()<.72?-1.55:1.55);
+ // Left-hand traffic: player and same-direction cars use the left lane;
+ // oncoming cars stay in the opposing right lane.
+ const lane=incoming?1.55:-1.55;
  const z=playerTrafficSpawn(index,incoming);
  const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0};
  traffic.baseSpeed=traffic.speed;
@@ -607,7 +617,11 @@ function createTrafficCar(index){
 }
 function playerTrafficSpawn(index,incoming){
  const playerZ=trackZ();
- return incoming?playerZ+150+index*54+Math.random()*36:playerZ+95+index*58+Math.random()*32;
+ // Keep both streams inside the visible streamed-world window and stagger them.
+ const slot=incoming?index:index-TRAFFIC_ONCOMING;
+ return incoming
+  ?playerZ+105+slot*42+Math.random()*24
+  :playerZ+72+slot*48+Math.random()*24;
 }
 for(let i=0;i<TRAFFIC_TOTAL;i++)createTrafficCar(i);
 function updateTraffic(dt){
@@ -616,14 +630,14 @@ function updateTraffic(dt){
   t.z+=t.speed*t.direction*dt;
   // Recycle each stream at opposite ends of the player's streamed-world window.
   if(t.direction>0&&(t.z>playerZ+WORLD_CHUNK_LENGTH*2.35||t.z>trackLength-18)){
-   t.z=playerZ+105+Math.random()*245;t.speed=8+Math.random()*14;t.baseSpeed=t.speed;t.lane=Math.random()<.72?-1.55:1.55;
-  }else if(t.direction<0&&(t.z<playerZ- WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
-   t.z=playerZ+185+Math.random()*260;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
+   t.z=playerZ+82+Math.random()*300;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;
+  }else if(t.direction<0&&(t.z<playerZ-WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
+   t.z=playerZ+115+Math.random()*300;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
-  const laneDrift=Math.sin(now+t.phase)*(.035+Math.random()*.0005);
-  t.mesh.position.set(roadX(z)+t.lane+laneDrift,roadY(z)+.03,worldZ(z));
-  // Incoming traffic faces the player; same-direction traffic follows the road.
+  const laneDrift=Math.sin(now+t.phase)*.035;
+  const laneOffset=t.lane+laneDrift,normal=roadNormal(z);
+  t.mesh.position.set(roadX(z)+normal.x*laneOffset,roadY(z)+.03,worldZ(z)+normal.z*laneOffset);
   t.mesh.rotation.set(0,heading+(t.direction<0?Math.PI:0),0);
  }
  // Mild randomized speed variation keeps the traffic from moving as a rigid convoy.
@@ -686,7 +700,7 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const name=el.dataset.control;
  const down=e=>{e.preventDefault();touchInput[name]=true;syncControl(name);el.classList.add('active');try{el.setPointerCapture(e.pointerId)}catch{}};
  const up=e=>{e.preventDefault();touchInput[name]=false;syncControl(name);el.classList.remove('active');};
- el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('pointerleave',up);el.addEventListener('lostpointercapture',up);
+ el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, verticalVelocity=0, grounded=true, airtime=0, paused=true, started=false, last=performance.now();
 
@@ -1115,7 +1129,8 @@ function update(dt){
  // Positive steering is right-turn. Keep keyboard, touch buttons and wheel input on the same sign convention.
  const keyboardSteer=(keyboardInput.right?1:0)-(keyboardInput.left?1:0);
  const buttonSteer=(touchInput.right?1:0)-(touchInput.left?1:0);
- const steerInput=keyboardSteer!==0?keyboardSteer:(steeringMode==='wheel'?wheelAngle/450:buttonSteer);
+ // Combine all active input sources instead of allowing one source to mask another.
+ const steerInput=THREE.MathUtils.clamp(keyboardSteer+buttonSteer+(steeringMode==='wheel'?wheelAngle/450:0),-1,1);
  // Faster steering rack response with a speed-sensitive rate limit.
  const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
