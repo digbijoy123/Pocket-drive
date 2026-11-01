@@ -967,7 +967,7 @@ function networkTick(dt){
     const front=obj.userData.axle==='front';
     obj.rotation.y=THREE.MathUtils.damp(obj.rotation.y,front?p.target.steering:0,14,dt);
     obj.position.y=THREE.MathUtils.damp(obj.position.y,.48+(front?-p.target.pitch:p.target.pitch)*1.7,8,dt);
-    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.x+=p.target.speed/.39*dt;});
+    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.y+=p.target.speed/.39*dt;});
    });
   }
  }
@@ -1166,7 +1166,7 @@ function update(dt){
  // Front tyre visuals must point the same way as the steering rack in both D and R.
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
  // Spin all four tyre meshes from road speed; steering is applied to the front axle groups.
- for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.x+=speed/.39*dt;}
+ for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.y+=speed/.39*dt;}
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
