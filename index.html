@@ -348,14 +348,16 @@ function roadX(z){
  const mountain=THREE.MathUtils.smoothstep(z,3600,4700)*(1-THREE.MathUtils.smoothstep(z,8300,9300));
  const switchbacks=mountain*(31*Math.sin((z-4300)*Math.PI/720)+8*Math.sin((z-4300)*Math.PI/240));
  const returnBends=9*Math.sin(z*.0017)+4*Math.sin(z*.0041);
- return approach+switchbacks+returnBends;
+ const seamEnvelope=Math.sin(Math.PI*z/trackLength);
+ return (approach+switchbacks+returnBends)*seamEnvelope;
 }
 function roadY(z){
  // The road climbs through the foothills, reaches a high summit shelf, then descends
  // on the far side before returning to the lower valley.
  const climb=42*THREE.MathUtils.smoothstep(z,2800,6200);
  const descent=42*THREE.MathUtils.smoothstep(z,7000,10300);
- const rolling=1.8*Math.sin(z*.0031)+.8*Math.sin(z*.007);
+ const seamEnvelope=Math.sin(Math.PI*z/trackLength);
+ const rolling=(1.8*Math.sin(z*.0031)+.8*Math.sin(z*.007))*seamEnvelope;
  return 3+climb-descent+rolling;
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
