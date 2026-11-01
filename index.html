@@ -609,7 +609,7 @@ function createTrafficCar(index){
  // oncoming cars stay in the opposing right lane.
  const lane=incoming?1.55:-1.55;
  const z=playerTrafficSpawn(index,incoming);
- const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0,crashed:false,crashAge:0,crashVX:0,crashVZ:0,crashSpin:0,crashLift:0,crashVy:0};
+ const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0,crashed:false,crashAge:0,crashVX:0,crashVZ:0,crashSpin:0,crashLift:0,crashVy:0,aiLane:lane,aiTargetLane:lane,aiChangeCooldown:2+Math.random()*3,aiBrake:0};
  traffic.baseSpeed=traffic.speed;
  trafficCars.push(traffic);return traffic;
 }
@@ -624,6 +624,8 @@ function playerTrafficSpawn(index,incoming){
 for(let i=0;i<TRAFFIC_TOTAL;i++)createTrafficCar(i);
 function updateTraffic(dt){
  const playerZ=trackZ(),now=performance.now()*.00045;
+ // Each traffic car uses local perception: same-lane following, safe passing checks,
+ // and a conservative braking response when the player or another car blocks its path.
  for(const t of trafficCars){
   if(t.crashed){
    t.crashAge+=dt;t.crashVX*=Math.exp(-.42*dt);t.crashVZ*=Math.exp(-.42*dt);
@@ -639,20 +641,75 @@ function updateTraffic(dt){
     t.crashed=false;t.crashAge=0;t.mesh.rotation.set(0,0,0);
     const incoming=t.direction<0;t.z=playerZ+(incoming?115:95)+Math.random()*280;
     t.speed=t.direction<0?13+Math.random()*12:9+Math.random()*12;t.baseSpeed=t.speed;
-    t.mesh.position.set(roadX(t.z)+(incoming?1.55:-1.55),roadY(t.z)+.03,worldZ(t.z));
+    t.lane=incoming?1.55:-1.55;t.aiLane=t.lane;t.aiTargetLane=t.lane;t.aiBrake=0;t.aiChangeCooldown=2;
+    t.mesh.position.set(roadX(t.z)+t.lane,roadY(t.z)+.03,worldZ(t.z));
    }
    continue;
   }
+  t.aiChangeCooldown=Math.max(0,t.aiChangeCooldown-dt);
+  const baseLane=t.direction<0?1.55:-1.55;
+  t.aiLane=THREE.MathUtils.damp(t.aiLane??baseLane,t.aiTargetLane??baseLane,2.8,dt);
+  // Find the nearest vehicle ahead in the current lane.
+  let obstacleGap=Infinity,obstacleSpeed=t.baseSpeed,obstacleKind='';
+  for(const other of trafficCars){
+   if(other===t||other.crashed||other.direction!==t.direction)continue;
+   const gap=(other.z-t.z)*t.direction;
+   const laneGap=Math.abs((other.aiLane??other.lane)-(t.aiLane??t.lane));
+   if(gap>0&&gap<obstacleGap&&laneGap<1.05){obstacleGap=gap;obstacleSpeed=other.speed;obstacleKind='traffic';}
+  }
+  // The player is also an obstacle when moving in the same direction and lane.
+  if(t.direction>0){
+   const gap=playerZ-t.z,playerLane=car.position.x-roadX(THREE.MathUtils.clamp(playerZ,0,trackLength));
+   if(gap>0&&gap<obstacleGap&&Math.abs(playerLane-(t.aiLane??t.lane))<1.25){
+    obstacleGap=gap;obstacleSpeed=Math.max(0,speed);obstacleKind='player';
+   }
+  }
+  // Overtake only in the passing lane and only when the opposing lane has a clear sight window.
+  if(obstacleGap<48&&t.direction>0&&t.aiChangeCooldown<=0&&Math.abs((t.aiTargetLane??baseLane)-baseLane)<.5){
+   const passLane=1.55;
+   let clear=true;
+   for(const other of trafficCars){
+    if(other===t||other.crashed)continue;
+    const gap=(other.z-t.z);
+    const otherLane=other.aiLane??other.lane;
+    if(Math.abs(otherLane-passLane)<1.15&&gap>-38&&gap<105){clear=false;break;}
+   }
+   // Never pull out if an oncoming vehicle is approaching or the player occupies the passing lane.
+   const playerAhead=playerZ-t.z;
+   const playerLane=car.position.x-roadX(THREE.MathUtils.clamp(playerZ,0,trackLength));
+   if(playerAhead>-35&&playerAhead<85&&Math.abs(playerLane-passLane)<1.2)clear=false;
+   if(clear){t.aiTargetLane=passLane;t.aiChangeCooldown=5.5;}
+  }
+  if(t.aiTargetLane!==baseLane&&t.aiChangeCooldown<=0){
+   // Return to the normal lane only after a clear gap behind the passed vehicle.
+   const returnClear=!trafficCars.some(other=>other!==t&&!other.crashed&&Math.abs((other.aiLane??other.lane)-baseLane)<1.1&&Math.abs(other.z-t.z)<24);
+   if(returnClear){t.aiTargetLane=baseLane;t.aiChangeCooldown=4;}
+  }
+  // Smooth acceleration and proportional braking; avoid robotic instant speed changes.
+  const cruise=t.baseSpeed+Math.sin(now*1.7+t.phase)*.65+Math.sin(now*.63+t.phase*2)*.35;
+  const safeGap=9+t.speed*1.05;
+  let targetSpeed=cruise;
+  if(obstacleGap<safeGap+28){
+   const followSpeed=obstacleSpeed-Math.max(0,(safeGap-obstacleGap)*.42)-1.2;
+   targetSpeed=Math.min(targetSpeed,Math.max(0,followSpeed));
+  }
+  // Ease off throttle and brake progressively as closing distance shrinks.
+  const desiredBrake=obstacleGap<safeGap?THREE.MathUtils.clamp((safeGap-obstacleGap)/safeGap,0,1):0;
+  t.aiBrake=THREE.MathUtils.damp(t.aiBrake,desiredBrake,desiredBrake>t.aiBrake?5.5:2.2,dt);
+  const accel=THREE.MathUtils.clamp((targetSpeed-t.speed)*.9,-8,2.2);
+  t.speed=Math.max(0,t.speed+accel*dt);
   t.z+=t.speed*t.direction*dt;
   if(t.direction>0&&(t.z>playerZ+WORLD_CHUNK_LENGTH*2.35||t.z>trackLength-18)){
-   t.z=playerZ+90+Math.random()*320;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;
+   t.z=playerZ+90+Math.random()*320;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;t.aiLane=-1.55;t.aiTargetLane=-1.55;
   }else if(t.direction<0&&(t.z<playerZ-WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
-   t.z=playerZ+105+Math.random()*320;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
+   t.z=playerZ+105+Math.random()*320;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;t.aiLane=1.55;t.aiTargetLane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
-  const laneDrift=Math.sin(now+t.phase)*.035,laneOffset=t.lane+laneDrift,normal=roadNormal(z);
+  const laneOffset=THREE.MathUtils.damp(t.aiLane,t.aiTargetLane,3.2,dt)+Math.sin(now+t.phase)*.025,normal=roadNormal(z);
   t.mesh.position.set(roadX(z)+normal.x*laneOffset,roadY(z)+.03,worldZ(z)+normal.z*laneOffset);
   t.mesh.rotation.set(0,heading+(t.direction<0?Math.PI:0),0);
+  // Brake lamps communicate AI braking to the player; only the rear lamp meshes are affected.
+  t.mesh.traverse(obj=>{if(obj.isMesh&&obj.material&&obj.material.color&&obj.material.color.getHex()===0xd62828)obj.material.emissiveIntensity=t.aiBrake>.15?1.4:.25;});
  }
  // Player-to-AI impact transfers closing speed into a skidding and tumbling AI wreck.
  for(const t of trafficCars){
@@ -675,11 +732,6 @@ function updateTraffic(dt){
   speed*=THREE.MathUtils.clamp(1-impact*.018,.38,.82);
   yawRate+=t.crashSpin*.10;
   showToast('TRAFFIC COLLISION · AI WRECKED');
- }
- for(const t of trafficCars){
-  if(t.crashed)continue;
-  const variation=Math.sin(now*1.7+t.phase)*.8+Math.sin(now*.63+t.phase*2)*.45;
-  t.speed=THREE.MathUtils.clamp(t.baseSpeed+variation,t.direction<0?11:7,t.direction<0?30:24);
  }
 }
 
