@@ -1073,8 +1073,10 @@ function update(dt){
  }
  if(steeringMode==='wheel')steeringWheel.style.transform='rotate('+wheelAngle+'deg)';
  // Positive steering is right-turn: right button and clockwise steering-wheel rotation both produce a positive road-wheel angle.
- const keyboardSteer=(keyboardInput.left?1:0)-(keyboardInput.right?1:0);
-  const steerInput=keyboardSteer!==0?keyboardSteer:(steeringMode==='wheel'?-wheelAngle/450:((touchInput.left?1:0)-(touchInput.right?1:0)));
+ // Positive steering is right-turn. Keep keyboard, touch buttons and wheel input on the same sign convention.
+ const keyboardSteer=(keyboardInput.right?1:0)-(keyboardInput.left?1:0);
+ const buttonSteer=(touchInput.right?1:0)-(touchInput.left?1:0);
+ const steerInput=keyboardSteer!==0?keyboardSteer:(steeringMode==='wheel'?wheelAngle/450:buttonSteer);
  // Faster steering rack response with a speed-sensitive rate limit.
  const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
