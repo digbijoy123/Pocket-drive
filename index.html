@@ -574,7 +574,8 @@ function applyCarStyle(id){
 const wheelAssemblies=[],frontWheelMeshes=[];
 for(const x of [-1,1]) for(const z of [-1.25,1.28]){
  const assembly=new THREE.Group();assembly.position.set(x*1.02,.48,z);assembly.userData.axle=z>0?'front':'rear';car.add(assembly);wheelAssemblies.push(assembly);
- const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;wheel.userData.isTire=true;assembly.add(wheel);
+ const wheelGeo=new THREE.CylinderGeometry(.39,.39,.24,10);wheelGeo.rotateZ(Math.PI/2); // Cylinder axle is now local X, matching the car's wheel axle.
+ const wheel=new THREE.Mesh(wheelGeo,tireMat);wheel.userData.isTire=true;assembly.add(wheel);
  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.255,8),white);hub.rotation.z=Math.PI/2;assembly.add(hub);
  if(z>0)frontWheelMeshes.push(assembly);
 }
@@ -852,7 +853,7 @@ document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click'
 // no game server or database is required for small friend rooms.
 let networkPeer=null, networkHost=false, networkRoomCode='', networkHostConn=null;
 let networkPlayers=new Map(), networkSlot=0, networkAccumulator=0, networkActive=false;
-const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=.05; // 20 Hz state exchange; render interpolation runs every frame.
+const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=1/30; // 30 Hz state exchange; remote rendering runs every frame.
 const networkHud=document.getElementById('networkHud');
 function setRoomStatus(id,message){const el=document.getElementById(id);if(el)el.textContent=message;}
 function setNetworkHud(message){networkHud.textContent=message;networkHud.style.display=message?'block':'none';}
@@ -986,20 +987,20 @@ function networkTick(dt){
  if(!networkActive||!networkPeer||networkPeer.destroyed)return;
  // Render remote cars every animation frame. The old implementation returned
  // between 10 Hz network sends, making remote cars visibly step and lag.
- const blend=1-Math.exp(-dt*13);
+ const blend=1-Math.exp(-dt*24);
  for(const p of networkPlayers.values()){
   if(p.mesh&&p.target){
-   p.mesh.position.lerp(new THREE.Vector3(p.target.x,p.target.y,p.target.z),blend);
+   p.mesh.position.set(THREE.MathUtils.damp(p.mesh.position.x,p.target.x,24,dt),THREE.MathUtils.damp(p.mesh.position.y,p.target.y,24,dt),THREE.MathUtils.damp(p.mesh.position.z,p.target.z,24,dt));
    const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
-   p.mesh.rotation.y+=delta*blend;
+   p.mesh.rotation.y+=delta*(1-Math.exp(-dt*20));
    p.mesh.rotation.x=THREE.MathUtils.damp(p.mesh.rotation.x,p.target.pitch,12,dt);
    p.mesh.rotation.z=THREE.MathUtils.damp(p.mesh.rotation.z,p.target.roll,12,dt);
    p.mesh.traverse(obj=>{
     if(!obj.isGroup||!obj.userData.axle)return;
     const front=obj.userData.axle==='front';
-    obj.rotation.y=THREE.MathUtils.damp(obj.rotation.y,front?p.target.steering:0,14,dt);
+    obj.rotation.y=THREE.MathUtils.damp(obj.rotation.y,front?p.target.steering:0,20,dt);
     obj.position.y=THREE.MathUtils.damp(obj.position.y,.48+(front?-p.target.pitch:p.target.pitch)*1.7,8,dt);
-    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.y+=p.target.speed/.39*dt;});
+    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.x+=p.target.speed/.39*dt;});
    });
   }
  }
@@ -1198,7 +1199,7 @@ function update(dt){
  // Front tyre visuals must point the same way as the steering rack in both D and R.
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
  // Spin all four tyre meshes from road speed; steering is applied to the front axle groups.
- for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.y+=speed/.39*dt;}
+ for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.x+=speed/.39*dt;}
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
