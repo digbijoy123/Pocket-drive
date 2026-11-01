@@ -858,7 +858,15 @@ function hostHandleConnection(conn){
    conn.send({type:'welcome',slot,host:currentNetworkState(),players:Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,p])=>[id,{...(p.state||networkSpawn(p.slot)),color:p.color}]))});
    setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));
   }else if(data.type==='state'){
-   const p=networkPlayers.get(conn.peer);if(p)p.state=data.state;
+   const p=networkPlayers.get(conn.peer);
+   const state=data.state;
+   // Update both the authoritative state relayed to guests and this host's
+   // interpolation target. Previously only p.state changed, so the host's
+   // remote car stayed frozen at its initial spawn position.
+   if(p&&state&&Number.isFinite(state.x)&&Number.isFinite(state.y)&&Number.isFinite(state.z)&&Number.isFinite(state.yaw)){
+    p.state={x:state.x,y:state.y,z:state.z,yaw:state.yaw,color:p.color};
+    p.target=p.state;
+   }
   }
  });
  conn.on('close',()=>{removeRemotePlayer(conn.peer);setRoomStatus('roomHostStatus','Players connected: '+networkPlayers.size+' / '+(NETWORK_MAX_PLAYERS-1));});
