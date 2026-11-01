@@ -469,6 +469,11 @@ function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
  m.position.set(x,y,z);parent.add(m);return m;
 }
 // Coordinates are relative to the road centre, so the station follows this road section.
+// These coordinates are also used by the forecourt collision check in update().
+const stationZ=560;
+const stationRoadX=roadX(stationZ);
+const stationY=roadY(stationZ);
+const stationWorldZ=worldZ(stationZ);
 const stationGroup=new THREE.Group();stationGroup.position.set(stationRoadX,stationY,stationWorldZ);fuelStop.add(stationGroup);
 // One level concrete foundation with a continuous asphalt drive-in apron.
 stationBox(60,.20,46,concreteMat,30,.02,0,stationGroup);
