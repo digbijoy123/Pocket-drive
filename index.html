@@ -574,7 +574,7 @@ function applyCarStyle(id){
 const wheelAssemblies=[],frontWheelMeshes=[];
 for(const x of [-1,1]) for(const z of [-1.25,1.28]){
  const assembly=new THREE.Group();assembly.position.set(x*1.02,.48,z);assembly.userData.axle=z>0?'front':'rear';car.add(assembly);wheelAssemblies.push(assembly);
- const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;assembly.add(wheel);
+ const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;wheel.userData.isTire=true;assembly.add(wheel);
  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.255,8),white);hub.rotation.z=Math.PI/2;assembly.add(hub);
  if(z>0)frontWheelMeshes.push(assembly);
 }
@@ -862,7 +862,7 @@ function sendToRoom(data){
  if(networkHost){for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(data);}
  else if(networkHostConn&&networkHostConn.open)networkHostConn.send(data);
 }
-function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,color:carStyles[selectedCar]?.color||0xe95b49};}
+function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,speed,steering:steeringAngle,pitch:car.rotation.x,roll:car.rotation.z,color:carStyles[selectedCar]?.color||0xe95b49};}
 function applyNetworkSnapshot(states){
  for(const [id,state] of Object.entries(states||{})){
   if((networkHost&&id==='host')||(!networkHost&&id===networkPeer?.id))continue;
@@ -892,7 +892,7 @@ function hostHandleConnection(conn){
    // interpolation target. Previously only p.state changed, so the host's
    // remote car stayed frozen at its initial spawn position.
    if(p&&state&&Number.isFinite(state.x)&&Number.isFinite(state.y)&&Number.isFinite(state.z)&&Number.isFinite(state.yaw)){
-    p.state={x:state.x,y:state.y,z:state.z,yaw:state.yaw,color:p.color};
+    p.state={...state,color:p.color};
     setRemoteTarget(p,p.state);
    }
   }
@@ -947,7 +947,7 @@ function setRemoteTarget(entry,state){
   const dx=state.x-entry.target.x,dz=state.z-entry.target.z;
   entry.audioSpeed=Math.min(55,Math.hypot(dx,dz)/elapsed);
  }
- entry.target={x:state.x,y:state.y,z:state.z,yaw:state.yaw,color:state.color||entry.color};
+ entry.target={x:state.x,y:state.y,z:state.z,yaw:state.yaw,speed:Number.isFinite(state.speed)?state.speed:0,steering:Number.isFinite(state.steering)?state.steering:0,pitch:Number.isFinite(state.pitch)?state.pitch:0,roll:Number.isFinite(state.roll)?state.roll:0,color:state.color||entry.color};
  entry.targetAt=now;
 }
 function networkTick(dt){
@@ -960,6 +960,15 @@ function networkTick(dt){
    p.mesh.position.lerp(new THREE.Vector3(p.target.x,p.target.y,p.target.z),blend);
    const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
    p.mesh.rotation.y+=delta*blend;
+   p.mesh.rotation.x=THREE.MathUtils.damp(p.mesh.rotation.x,p.target.pitch,12,dt);
+   p.mesh.rotation.z=THREE.MathUtils.damp(p.mesh.rotation.z,p.target.roll,12,dt);
+   p.mesh.traverse(obj=>{
+    if(!obj.isGroup||!obj.userData.axle)return;
+    const front=obj.userData.axle==='front';
+    obj.rotation.y=THREE.MathUtils.damp(obj.rotation.y,front?p.target.steering:0,14,dt);
+    obj.position.y=THREE.MathUtils.damp(obj.position.y,.48+(front?-p.target.pitch:p.target.pitch)*1.7,8,dt);
+    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.y+=p.target.speed/.39*dt;});
+   });
   }
  }
  networkAccumulator+=dt;
@@ -1156,6 +1165,8 @@ function update(dt){
  car.rotation.y=yaw;
  // Front tyre visuals must point the same way as the steering rack in both D and R.
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
+ // Spin all four tyre meshes from road speed; steering is applied to the front axle groups.
+ for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.y+=speed/.39*dt;}
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
