@@ -343,11 +343,16 @@ const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=m
 const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- // Long approach, then a sequence of broad switchbacks that wrap the central massif.
- const approach=18*Math.sin(z*.0018)+7*Math.sin(z*.0045);
- const mountain=THREE.MathUtils.smoothstep(z,3600,4700)*(1-THREE.MathUtils.smoothstep(z,8300,9300));
- const switchbacks=mountain*(31*Math.sin((z-4300)*Math.PI/720)+8*Math.sin((z-4300)*Math.PI/240));
- const returnBends=9*Math.sin(z*.0017)+4*Math.sin(z*.0041);
+ // Broad, unmistakable mountain switchbacks. The large alternating bends form
+ // the visible road route; smaller harmonics soften each transition.
+ const approach=13*Math.sin(z*.0022)+5*Math.sin(z*.0051);
+ const mountain=THREE.MathUtils.smoothstep(z,3000,3900)*(1-THREE.MathUtils.smoothstep(z,9650,10800));
+ const switchbacks=mountain*(
+   58*Math.sin((z-3650)*Math.PI/560)+
+   13*Math.sin((z-3650)*Math.PI/186.6667)+
+   5*Math.sin((z-3650)*Math.PI/1120)
+ );
+ const returnBends=11*Math.sin(z*.0019)+4*Math.sin(z*.0043);
  const seamEnvelope=Math.sin(Math.PI*z/trackLength);
  return (approach+switchbacks+returnBends)*seamEnvelope;
 }
@@ -403,23 +408,28 @@ function addChunkStrip(group,zStart,zEnd,width,y,material){
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
 const trailMaterial=mat(0x806447);
-function addDirtTrail(group,zStart,zEnd,side,reach,phase=0){
- const start=Math.max(zStart,0),end=Math.min(zEnd,trackLength);
+function addDirtTrail(group,zStart,zEnd,side,reach,phase=0,chunkStart=0,chunkEnd=trackLength){
+ // Build only the portion belonging to this streamed chunk. Previously every chunk
+ // recreated the entire trail, stacking duplicate meshes and producing broken strips.
+ const start=Math.max(zStart,chunkStart,0),end=Math.min(zEnd,chunkEnd,trackLength);
  if(end-start<2)return;
- const verts=[],indices=[],steps=Math.ceil(end-start);
- const dirtMat=trailMaterial;
+ const verts=[],indices=[],steps=Math.max(2,Math.ceil(end-start));
  for(let i=0;i<=steps;i++){
   const z=start+(end-start)*i/steps;
   const u=(z-zStart)/(zEnd-zStart);
-  // Trails leave and rejoin the asphalt smoothly; their middle section wanders through the forest.
+  const normal=roadNormal(z);
   const offset=side*reach*Math.pow(Math.sin(Math.PI*u),.82)+Math.sin(u*Math.PI*2+phase)*2.2*Math.sin(Math.PI*u);
-  const x=roadX(z)+offset,half=1.65;
-  const y=terrainHeight(x,z)+.10;
-  verts.push(x-half,y,worldZ(z),x+half,y,worldZ(z));
+  const centerX=roadX(z)+normal.x*offset;
+  const centerZ=z+normal.z*offset;
+  const half=1.75;
+  const x1=centerX-normal.x*half,z1=centerZ-normal.z*half;
+  const x2=centerX+normal.x*half,z2=centerZ+normal.z*half;
+  const y1=terrainHeight(x1,z1)+.055,y2=terrainHeight(x2,z2)+.055;
+  verts.push(x1,y1,worldZ(z1),x2,y2,worldZ(z2));
  }
  for(let i=0;i<steps;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
- const mesh=new THREE.Mesh(geo,dirtMat);mesh.material.side=THREE.DoubleSide;group.add(mesh);
+ const mesh=new THREE.Mesh(geo,trailMaterial);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
 
 function buildWorldChunk(index){
@@ -443,9 +453,9 @@ function buildWorldChunk(index){
  addChunkStrip(group,zStart,zEnd,roadWidth+1.2,.025,edgeMat);
  addChunkStrip(group,zStart,zEnd,roadWidth,.055,roadMat);
  // Three optional dirt routes: two reconnecting shortcuts and one remote exploration spur.
- addDirtTrail(group,900,1580,1,27,.4);
- addDirtTrail(group,3850,5050,-1,34,1.2);
- addDirtTrail(group,7600,8750,1,42,2.1);
+ addDirtTrail(group,900,1580,1,27,.4,zStart,zEnd);
+ addDirtTrail(group,3850,5050,-1,34,1.2,zStart,zEnd);
+ addDirtTrail(group,7600,8750,1,42,2.1,zStart,zEnd);
  for(let z=Math.ceil(zStart/10)*10;z<zEnd;z+=10){
   const dash=new THREE.Mesh(markingGeo,lineMat);dash.position.set(roadX(z),roadY(z)+.135,worldZ(z));dash.rotation.y=roadHeading(z);group.add(dash);
  }
@@ -1189,7 +1199,12 @@ function update(dt){
  const roadOffset=car.position.x-roadX(zForRoad);
  const inFuelForecourt=Math.abs(trackZ()-stationZ)<23&&roadOffset>4&&roadOffset<61;
  const onRoad=Math.abs(roadOffset)<roadWidth/2||inFuelForecourt;
- const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
+ const onDirtTrail=(
+   (trackZ()>900&&trackZ()<1580&&Math.abs(roadOffset-roadNormal(trackZ()).x*(27*Math.pow(Math.sin(Math.PI*(trackZ()-900)/680),.82)))<2.5)||
+   (trackZ()>3850&&trackZ()<5050&&Math.abs(roadOffset+roadNormal(trackZ()).x*(34*Math.pow(Math.sin(Math.PI*(trackZ()-3850)/1200),.82)))<2.5)||
+   (trackZ()>7600&&trackZ()<8750&&Math.abs(roadOffset-roadNormal(trackZ()).x*(42*Math.pow(Math.sin(Math.PI*(trackZ()-7600)/1150),.82)))<2.5)
+ );
+ const mu=onRoad?vehicle.mu:(onDirtTrail?0.72:(sportsMode?0.68:0.48));
  const vx=speed, absVx=Math.abs(vx);
  // Progressive steering ratio: quick around centre, calmer at speed to avoid twitchiness.
  const maxSteer=(sportsMode?0.52:0.46)/(1+absVx*(sportsMode?0.024:0.029));
