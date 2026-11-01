@@ -339,20 +339,30 @@ const sun = new THREE.DirectionalLight(0xfff0d4,2.4); sun.position.set(-35,65,25
 const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness,flatShading:true});
 const grassMat=mat(0x6fae61), roadMat=mat(0x424b56), edgeMat=mat(0xf4e9d2), lineMat=mat(0xffd77b);
 const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=mat(0x8fc9d5), redMat=mat(0xe95b49), yellowMat=mat(0xf2c14e);
-// Simple continuous forest road with broad, gentle bends and one modest mountain rise.
+// Level 1: dense forest approach, sustained mountain climb with linked hairpins,
+// a high ridge traverse, long descent, and a small valley village finish.
 const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- // The original broad loop: no artificial switchbacks or sharp lateral oscillations.
- const phase=Math.PI*2*z/trackLength;
- return 18*Math.sin(phase*3)+9*Math.sin(phase*7)+
-        4.2*Math.sin(phase*19)+1.8*Math.sin(phase*31);
+ const forest=13*Math.sin(z/205)+5.5*Math.sin(z/91)+2.2*Math.sin(z/37);
+ const mountain=smooth(2850,3900,z)*(1-smooth(7700,8550,z));
+ const hairpins=mountain*(
+   34*Math.sin((z-3300)/390)+
+   12*Math.sin((z-3300)/190)+
+   4.5*Math.sin((z-3300)/83));
+ const returnBend=mountain*(
+   27*Math.tanh((z-5050)/115)-27*Math.tanh((z-5700)/115)+
+   -31*Math.tanh((z-6550)/125)+31*Math.tanh((z-7200)/125));
+ const village=smooth(9650,10300,z);
+ return (1-village)*(forest+hairpins+returnBend)+
+        village*(9*Math.sin(z/175)+3*Math.sin(z/68));
 }
 function roadY(z){
- // A gentle, continuous rise and fall over the long loop.
- const phase=Math.PI*2*z/trackLength;
- return 5.5*Math.sin(phase*2)+2.6*Math.sin(phase*5)+
-        1.8*Math.sin(phase*11)+1.0*Math.sin(phase*17);
+ const climb=smooth(2750,5200,z);
+ const summit=smooth(7100,8350,z);
+ const descent=smooth(8200,10100,z);
+ const rolling=1.8*Math.sin(z/170)+.75*Math.sin(z/49);
+ return 3+rolling+44*climb-11*summit-36*descent;
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
 function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
@@ -367,9 +377,9 @@ function terrainHeight(x,z){
  const rolling=Math.sin(x*0.031+z*0.017)*.38+Math.sin(x*0.014-z*0.023)*.30;
  const hillside=Math.sin(z*0.006+x*0.004)*.48;
  // One simple rounded mountain beside the route; deliberately low and broad.
- const mountainBlend=Math.exp(-Math.pow((z-6500)/2100,2));
- const mountainRadius=Math.exp(-Math.pow((x-18)/105,2));
- const simpleMountain=mountainBlend*mountainRadius*19;
+ const mountainBlend=Math.exp(-Math.pow((z-6200)/2700,2));
+ const mountainRadius=Math.exp(-Math.pow((x-8)/145,2));
+ const simpleMountain=mountainBlend*mountainRadius*34;
  const natural=shoulder+rolling+hillside+simpleMountain;
  const roadBlend=1-THREE.MathUtils.smoothstep(lateralDistance,roadWidth/2,roadWidth/2+5);
  const belowRoad=roadY(z)-.12;
@@ -537,7 +547,7 @@ fuelStop.visible=false;
 // Mountain rock faces and ridgelines frame the high switchback section.
 const mountainRockMats=[mat(0x59675f),mat(0x707b70),mat(0x899083)];
 for(let i=0;i<52;i++){
- const z=300+i*9.2, side=i%2?1:-1, cx=roadX(z);
+ const z=3850+i*76, side=i%2?1:-1, cx=roadX(z);
  const rock=new THREE.Mesh(new THREE.ConeGeometry(7+Math.random()*9,12+Math.random()*22,5),mountainRockMats[i%mountainRockMats.length]);
  rock.position.set(cx+side*(24+Math.random()*24),roadY(z)+5+Math.random()*8,worldZ(z)+(Math.random()-.5)*16);
  rock.rotation.z=(Math.random()-.5)*.22;scene.add(rock);
@@ -545,7 +555,7 @@ for(let i=0;i<52;i++){
 // Small hillside village at the end of the descent, with dirt clearings and simple houses.
 const villageGroundMat=mat(0x9c8b64), houseWallMats=[mat(0xd9bd8d),mat(0xc9d0bd),mat(0xd8a77f)], roofMat=mat(0x714c3a);
 for(let i=0;i<8;i++){
- const z=990+i*19, side=i%2?1:-1, cx=roadX(z), cy=roadY(z), zz=worldZ(z);
+ const z=10300+i*19, side=i%2?1:-1, cx=roadX(z), cy=roadY(z), zz=worldZ(z);
  const clearing=new THREE.Mesh(new THREE.PlaneGeometry(17,18),villageGroundMat);clearing.rotation.x=-Math.PI/2;clearing.rotation.z=0;clearing.position.set(cx+side*14,cy+.015,zz);scene.add(clearing);
  const house=new THREE.Group();house.position.set(cx+side*(12+Math.random()*3),cy,zz);house.rotation.y=(Math.random()-.5)*.22;scene.add(house);
  const wall=new THREE.Mesh(new THREE.BoxGeometry(4.5,2.7,4),houseWallMats[i%houseWallMats.length]);wall.position.y=1.35;house.add(wall);
