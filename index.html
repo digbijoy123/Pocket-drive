@@ -340,7 +340,7 @@ const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness,f
 const grassMat=mat(0x6fae61), roadMat=mat(0x424b56), edgeMat=mat(0xf4e9d2), lineMat=mat(0xffd77b);
 const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=mat(0x8fc9d5), redMat=mat(0xe95b49), yellowMat=mat(0xf2c14e);
 // One continuous forest road: linked sweeping bends, tight hairpin-like switchbacks and rolling elevation.
-const trackLength=1600, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
+const trackLength=8000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
  const broad=19*Math.sin(z/92)+10*Math.sin(z/47);
@@ -486,7 +486,7 @@ function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
 }
 // Coordinates are relative to the road centre, so the station follows this road section.
 // These coordinates are also used by the forecourt collision check in update().
-const stationZ=560;
+const stationZ=4800; // Fuel stop is about 3 miles into the loop.
 const stationRoadX=roadX(stationZ);
 const stationY=roadY(stationZ);
 const stationWorldZ=worldZ(stationZ);
@@ -529,7 +529,7 @@ function stationText(textValue,x,y,z,size,color){
 }
 stationText('FUEL',58,4.3,12.77,4.1,'#ffffff');
 stationText('24/7 MART',48,3.55,-7.32,2.5,'#ffffff');stationText('FUEL',27,3.35,5.63,3.0,'#ffffff');
-fuelStop.visible=false;
+fuelStop.visible=true;
 // stylized car model
 
 // Mountain rock faces and ridgelines frame the high switchback section.
@@ -594,7 +594,7 @@ car.position.set(roadX(10)-1.55,roadY(10), -trackLength/2+10);
 // Ambient AI traffic with randomized headways and mixed cruising speeds.
 const trafficCars=[];
 const trafficColors=[0x39a9ff,0xf2c14e,0x52c878,0xb58cff,0xe87945,0xd8dce2,0xe85d75,0x72c9bd];
-const TRAFFIC_TOTAL=14, TRAFFIC_ONCOMING=7;
+const TRAFFIC_TOTAL=22, TRAFFIC_ONCOMING=11;
 function createTrafficCar(index){
  const mesh=car.clone(true),color=trafficColors[index%trafficColors.length];
  mesh.traverse(obj=>{
