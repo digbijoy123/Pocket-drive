@@ -339,31 +339,20 @@ const sun = new THREE.DirectionalLight(0xfff0d4,2.4); sun.position.set(-35,65,25
 const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness,flatShading:true});
 const grassMat=mat(0x6fae61), roadMat=mat(0x424b56), edgeMat=mat(0xf4e9d2), lineMat=mat(0xffd77b);
 const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=mat(0x8fc9d5), redMat=mat(0xe95b49), yellowMat=mat(0xf2c14e);
-// One continuous forest road: linked sweeping bends, tight hairpin-like switchbacks and rolling elevation.
+// Simple continuous forest road with broad, gentle bends and one modest mountain rise.
 const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- // Broad, unmistakable mountain switchbacks. The large alternating bends form
- // the visible road route; smaller harmonics soften each transition.
- const approach=13*Math.sin(z*.0022)+5*Math.sin(z*.0051);
- const mountain=THREE.MathUtils.smoothstep(z,3000,3900)*(1-THREE.MathUtils.smoothstep(z,9650,10800));
- const switchbacks=mountain*(
-   58*Math.sin((z-3650)*Math.PI/560)+
-   13*Math.sin((z-3650)*Math.PI/186.6667)+
-   5*Math.sin((z-3650)*Math.PI/1120)
- );
- const returnBends=11*Math.sin(z*.0019)+4*Math.sin(z*.0043);
- const seamEnvelope=Math.sin(Math.PI*z/trackLength);
- return (approach+switchbacks+returnBends)*seamEnvelope;
+ // The original broad loop: no artificial switchbacks or sharp lateral oscillations.
+ const phase=Math.PI*2*z/trackLength;
+ return 18*Math.sin(phase*3)+9*Math.sin(phase*7)+
+        4.2*Math.sin(phase*19)+1.8*Math.sin(phase*31);
 }
 function roadY(z){
- // The road climbs through the foothills, reaches a high summit shelf, then descends
- // on the far side before returning to the lower valley.
- const climb=42*THREE.MathUtils.smoothstep(z,2800,6200);
- const descent=42*THREE.MathUtils.smoothstep(z,7000,10300);
- const seamEnvelope=Math.sin(Math.PI*z/trackLength);
- const rolling=(1.8*Math.sin(z*.0031)+.8*Math.sin(z*.007))*seamEnvelope;
- return 3+climb-descent+rolling;
+ // A gentle, continuous rise and fall over the long loop.
+ const phase=Math.PI*2*z/trackLength;
+ return 5.5*Math.sin(phase*2)+2.6*Math.sin(phase*5)+
+        1.8*Math.sin(phase*11)+1.0*Math.sin(phase*17);
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
 function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
@@ -377,12 +366,11 @@ function terrainHeight(x,z){
  const shoulder=roadY(z)-.12+Math.max(0,lateralDistance-roadWidth/2)*0.018;
  const rolling=Math.sin(x*0.031+z*0.017)*.38+Math.sin(x*0.014-z*0.023)*.30;
  const hillside=Math.sin(z*0.006+x*0.004)*.48;
- // Central mountain massif: a broad ridge with steep outer shoulders and a high summit.
- const mountainBlend=Math.exp(-Math.pow((z-6500)/2450,2));
- const mountainRadius=Math.exp(-Math.pow((x-2)/82,2));
- const massif=mountainBlend*mountainRadius*58;
- const ridges=mountainBlend*(Math.sin(x*.075+z*.012)*2.1+Math.sin(x*.13-z*.018)*1.2);
- const natural=shoulder+rolling+hillside+massif+ridges;
+ // One simple rounded mountain beside the route; deliberately low and broad.
+ const mountainBlend=Math.exp(-Math.pow((z-6500)/2100,2));
+ const mountainRadius=Math.exp(-Math.pow((x-18)/105,2));
+ const simpleMountain=mountainBlend*mountainRadius*19;
+ const natural=shoulder+rolling+hillside+simpleMountain;
  const roadBlend=1-THREE.MathUtils.smoothstep(lateralDistance,roadWidth/2,roadWidth/2+5);
  const belowRoad=roadY(z)-.12;
  return THREE.MathUtils.lerp(natural,belowRoad,roadBlend);
@@ -407,31 +395,6 @@ function addChunkStrip(group,zStart,zEnd,width,y,material){
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
-const trailMaterial=mat(0x806447);
-function addDirtTrail(group,zStart,zEnd,side,reach,phase=0,chunkStart=0,chunkEnd=trackLength){
- // Build only the portion belonging to this streamed chunk. Previously every chunk
- // recreated the entire trail, stacking duplicate meshes and producing broken strips.
- const start=Math.max(zStart,chunkStart,0),end=Math.min(zEnd,chunkEnd,trackLength);
- if(end-start<2)return;
- const verts=[],indices=[],steps=Math.max(2,Math.ceil(end-start));
- for(let i=0;i<=steps;i++){
-  const z=start+(end-start)*i/steps;
-  const u=(z-zStart)/(zEnd-zStart);
-  const normal=roadNormal(z);
-  const offset=side*reach*Math.pow(Math.sin(Math.PI*u),.82)+Math.sin(u*Math.PI*2+phase)*2.2*Math.sin(Math.PI*u);
-  const centerX=roadX(z)+normal.x*offset;
-  const centerZ=z+normal.z*offset;
-  const half=1.75;
-  const x1=centerX-normal.x*half,z1=centerZ-normal.z*half;
-  const x2=centerX+normal.x*half,z2=centerZ+normal.z*half;
-  const y1=terrainHeight(x1,z1)+.055,y2=terrainHeight(x2,z2)+.055;
-  verts.push(x1,y1,worldZ(z1),x2,y2,worldZ(z2));
- }
- for(let i=0;i<steps;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
- const mesh=new THREE.Mesh(geo,trailMaterial);mesh.material.side=THREE.DoubleSide;group.add(mesh);
-}
-
 function buildWorldChunk(index){
  const zStart=index*WORLD_CHUNK_LENGTH,zEnd=(index+1)*WORLD_CHUNK_LENGTH;
  if(zEnd<=zStart)return null;
@@ -452,10 +415,6 @@ function buildWorldChunk(index){
  const terrain=new THREE.Mesh(terrainGeo,grassMat);terrain.material.side=THREE.DoubleSide;group.add(terrain);
  addChunkStrip(group,zStart,zEnd,roadWidth+1.2,.025,edgeMat);
  addChunkStrip(group,zStart,zEnd,roadWidth,.055,roadMat);
- // Three optional dirt routes: two reconnecting shortcuts and one remote exploration spur.
- addDirtTrail(group,900,1580,1,27,.4,zStart,zEnd);
- addDirtTrail(group,3850,5050,-1,34,1.2,zStart,zEnd);
- addDirtTrail(group,7600,8750,1,42,2.1,zStart,zEnd);
  for(let z=Math.ceil(zStart/10)*10;z<zEnd;z+=10){
   const dash=new THREE.Mesh(markingGeo,lineMat);dash.position.set(roadX(z),roadY(z)+.135,worldZ(z));dash.rotation.y=roadHeading(z);group.add(dash);
  }
