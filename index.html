@@ -359,7 +359,7 @@ function roadY(z){
 const worldZ=z=>z-trackLength/2;
 // Streamed world: only a small window of terrain, road and forest exists around the player.
 const WORLD_CHUNK_LENGTH=180, WORLD_CHUNKS_BEHIND=2, WORLD_CHUNKS_AHEAD=3;
-const worldChunks=new Map();
+const worldChunks=new Map(),worldChunkQueue=[],worldChunkQueued=new Set();
 const forestRows=[8,15,23,33,46,62];
 const trunkGeo=new THREE.CylinderGeometry(.16,.25,1.9,5);
 const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12,1.9,6),new THREE.ConeGeometry(.82,1.65,6)];
@@ -427,7 +427,13 @@ function updateWorldChunks(){
  const playerZ=THREE.MathUtils.clamp(trackZ(),routeStart,trackLength-1);
  const center=Math.floor(playerZ/WORLD_CHUNK_LENGTH);
  const min=center-WORLD_CHUNKS_BEHIND,max=center+WORLD_CHUNKS_AHEAD;
- for(let i=min;i<=max;i++)if(!worldChunks.has(i))buildWorldChunk(i);
+ const needed=[];
+ for(let i=min;i<=max;i++)needed.push(i);
+ needed.sort((a,b)=>Math.abs(a-center)-Math.abs(b-center)||a-b);
+ for(const i of needed)if(!worldChunks.has(i)&&!worldChunkQueued.has(i)){worldChunkQueue.push(i);worldChunkQueued.add(i);}
+ for(let q=worldChunkQueue.length-1;q>=0;q--)if(worldChunkQueue[q]<min||worldChunkQueue[q]>max){worldChunkQueued.delete(worldChunkQueue[q]);worldChunkQueue.splice(q,1);}
+ // Build at most one chunk per frame so terrain/forest creation never stalls the render loop.
+ if(worldChunkQueue.length){const next=worldChunkQueue.shift();worldChunkQueued.delete(next);if(next>=min&&next<=max&&!worldChunks.has(next))buildWorldChunk(next);}
  for(const [i,group] of worldChunks){
   if(i<min||i>max){
    scene.remove(group);
