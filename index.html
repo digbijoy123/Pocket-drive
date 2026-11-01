@@ -574,7 +574,7 @@ function applyCarStyle(id){
 const wheelAssemblies=[],frontWheelMeshes=[];
 for(const x of [-1,1]) for(const z of [-1.25,1.28]){
  const assembly=new THREE.Group();assembly.position.set(x*1.02,.48,z);assembly.userData.axle=z>0?'front':'rear';car.add(assembly);wheelAssemblies.push(assembly);
- const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;assembly.add(wheel);
+ const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.39,.39,.24,10),tireMat);wheel.rotation.z=Math.PI/2;wheel.userData.isTire=true;assembly.add(wheel);
  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.255,8),white);hub.rotation.z=Math.PI/2;assembly.add(hub);
  if(z>0)frontWheelMeshes.push(assembly);
 }
@@ -668,11 +668,37 @@ function syncAudioState(){
  if(audioEnabled&&started&&!paused)audioCtx.resume().catch(()=>{});
  else {engineGain.gain.setTargetAtTime(0,audioCtx.currentTime,.08);harmonicGain.gain.setTargetAtTime(0,audioCtx.currentTime,.08);}
 }
+function ensureRemoteEngine(entry){
+ if(!audioCtx||entry.engineNodes)return;
+ try{
+  const osc=audioCtx.createOscillator(),osc2=audioCtx.createOscillator();
+  const filter=audioCtx.createBiquadFilter(),gain=audioCtx.createGain(),panner=audioCtx.createStereoPanner();
+  osc.type='sawtooth';osc2.type='triangle';filter.type='lowpass';filter.frequency.value=180;
+  gain.gain.value=0;osc.connect(filter);osc2.connect(filter);filter.connect(gain);gain.connect(panner);panner.connect(audioCtx.destination);
+  osc.start();osc2.start();entry.engineNodes={osc,osc2,filter,gain,panner};
+ }catch(_){}
+}
+function updateRemoteEngineAudio(t){
+ for(const p of networkPlayers.values()){
+  if(!p.mesh)continue;
+  ensureRemoteEngine(p);
+  const n=p.engineNodes;if(!n)continue;
+  const dx=p.mesh.position.x-car.position.x,dz=p.mesh.position.z-car.position.z;
+  const distance=Math.hypot(dx,dz),relativeX=Math.sin(yaw)*dz+Math.cos(yaw)*dx;
+  const speed=p.audioSpeed||0,rpm=Math.min(3600,850+speed*62);
+  const audible=audioEnabled&&started&&!paused&&distance<85;
+  n.osc.frequency.setTargetAtTime(rpm/60*1.12,t,.12);
+  n.osc2.frequency.setTargetAtTime(rpm/60*.56,t,.14);
+  n.filter.frequency.setTargetAtTime(160+Math.min(speed,38)*4,t,.14);
+  n.gain.gain.setTargetAtTime(audible?(0.075*Math.max(0,1-distance/95)):0,t,.16);
+  n.panner.pan.setTargetAtTime(THREE.MathUtils.clamp(relativeX/Math.max(5,distance),-1,1),t,.12);
+ }
+}
 function updateGameAudio(){
  if(!audioReady||!audioCtx)return;
  const v=Math.abs(speed), throttle=input.gas&&driveMode!=='N'?1:0;
  const t=audioCtx.currentTime;
- if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.09);harmonicGain.gain.setTargetAtTime(0,t,.09);return;}
+ if(!audioEnabled||!started||paused){engineGain.gain.setTargetAtTime(0,t,.09);harmonicGain.gain.setTargetAtTime(0,t,.09);updateRemoteEngineAudio(t);return;}
  if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
  // Lower RPM range, a subdued low-pass tone and slow response create a heavier car-like rumble.
  const rpm=Math.min(3400,850+v*58+throttle*480+(input.brake&&v>2?80:0));
@@ -683,6 +709,7 @@ function updateGameAudio(){
  engineHarmonic.frequency.setTargetAtTime(420+throttle*180+v*3,t,.18);
  engineGain.gain.setTargetAtTime(.055+throttle*.025+Math.min(v/45,.25)*.045,t,.16);
  harmonicGain.gain.setTargetAtTime(.0015+throttle*.002+Math.min(v/50,.2)*.003,t,.16);
+ updateRemoteEngineAudio(t);
 }
 function playTireSqueal(){
  if(!audioEnabled||!audioCtx||!started||paused)return;
@@ -793,7 +820,7 @@ document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click'
 // no game server or database is required for small friend rooms.
 let networkPeer=null, networkHost=false, networkRoomCode='', networkHostConn=null;
 let networkPlayers=new Map(), networkSlot=0, networkAccumulator=0, networkActive=false;
-const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=.10;
+const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=.05; // 20 Hz state exchange; render interpolation runs every frame.
 const networkHud=document.getElementById('networkHud');
 function setRoomStatus(id,message){const el=document.getElementById(id);if(el)el.textContent=message;}
 function setNetworkHud(message){networkHud.textContent=message;networkHud.style.display=message?'block':'none';}
@@ -822,11 +849,12 @@ function createRemoteCar(id,color){
   obj.material=Array.isArray(obj.material)?copies:copies[0];
  });
  mesh.position.set(0,-100,0);scene.add(mesh);
- networkPlayers.set(id,{mesh,color:color||0x39a9ff,target:null,conn:entry?.conn||null,slot:entry?.slot||0});
+ networkPlayers.set(id,{...entry,mesh,color:color||0x39a9ff,target:entry?.target||null,conn:entry?.conn||null,slot:entry?.slot||0,audioSpeed:entry?.audioSpeed||0,audioLastX:null,audioLastZ:null,engineNodes:entry?.engineNodes||null});
  return mesh;
 }
 function removeRemotePlayer(id){
  const entry=networkPlayers.get(id);if(!entry)return;
+ if(entry.engineNodes){try{entry.engineNodes.osc.stop();entry.engineNodes.osc2.stop();entry.engineNodes.gain.disconnect();entry.engineNodes.filter.disconnect();entry.engineNodes.panner.disconnect();}catch(_){}}
  if(entry.mesh){scene.remove(entry.mesh);entry.mesh.traverse(o=>{if(o.isMesh&&o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose();}});}
  networkPlayers.delete(id);
 }
@@ -834,12 +862,12 @@ function sendToRoom(data){
  if(networkHost){for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(data);}
  else if(networkHostConn&&networkHostConn.open)networkHostConn.send(data);
 }
-function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,color:carStyles[selectedCar]?.color||0xe95b49};}
+function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,speed,steering:steeringAngle,pitch:car.rotation.x,roll:car.rotation.z,color:carStyles[selectedCar]?.color||0xe95b49};}
 function applyNetworkSnapshot(states){
  for(const [id,state] of Object.entries(states||{})){
   if((networkHost&&id==='host')||(!networkHost&&id===networkPeer?.id))continue;
   const mesh=createRemoteCar(id,state.color);
-  const entry=networkPlayers.get(id);entry.target=state;
+  const entry=networkPlayers.get(id);setRemoteTarget(entry,state);
  }
  for(const [id] of networkPlayers){if(!states||!states[id])removeRemotePlayer(id);}
 }
@@ -864,8 +892,8 @@ function hostHandleConnection(conn){
    // interpolation target. Previously only p.state changed, so the host's
    // remote car stayed frozen at its initial spawn position.
    if(p&&state&&Number.isFinite(state.x)&&Number.isFinite(state.y)&&Number.isFinite(state.z)&&Number.isFinite(state.yaw)){
-    p.state={x:state.x,y:state.y,z:state.z,yaw:state.yaw,color:p.color};
-    p.target=p.state;
+    p.state={...state,color:p.color};
+    setRemoteTarget(p,p.state);
    }
   }
  });
@@ -899,8 +927,8 @@ async function joinMultiplayerRoom(){
     if(data.type==='full'){setRoomStatus('roomJoinStatus','Room is full (maximum 5 players).');networkHostConn.close();return;}
     if(data.type==='welcome'){
      networkSlot=data.slot;setLocalNetworkSpawn(networkSlot);
-     if(data.host){createRemoteCar('host',data.host.color);networkPlayers.get('host').target=data.host;}
-     for(const [id,state] of Object.entries(data.players||{})){createRemoteCar(id,state.color);networkPlayers.get(id).target=state;}
+     if(data.host){createRemoteCar('host',data.host.color);setRemoteTarget(networkPlayers.get('host'),data.host);}
+     for(const [id,state] of Object.entries(data.players||{})){createRemoteCar(id,state.color);setRemoteTarget(networkPlayers.get(id),state);}
      networkActive=true;setNetworkHud('ROOM '+networkRoomCode+' · CONNECTED');setRoomStatus('roomJoinStatus','Connected! Joining the drive…');
      launchGame();
     }else if(data.type==='snapshot'){applyNetworkSnapshot(data.players);}
@@ -911,9 +939,41 @@ async function joinMultiplayerRoom(){
   networkPeer.on('error',err=>setRoomStatus('roomJoinStatus',err.type==='peer-unavailable'?'Room not found. Check the key.':'Connection error: '+(err.type||'try again')));
  }catch(err){setRoomStatus('roomJoinStatus','Could not join. Check your connection.');}
 }
+function setRemoteTarget(entry,state){
+ if(!entry||!state||!Number.isFinite(state.x)||!Number.isFinite(state.y)||!Number.isFinite(state.z)||!Number.isFinite(state.yaw))return;
+ const now=performance.now();
+ if(entry.target&&entry.targetAt){
+  const elapsed=Math.max(.02,(now-entry.targetAt)/1000);
+  const dx=state.x-entry.target.x,dz=state.z-entry.target.z;
+  entry.audioSpeed=Math.min(55,Math.hypot(dx,dz)/elapsed);
+ }
+ entry.target={x:state.x,y:state.y,z:state.z,yaw:state.yaw,speed:Number.isFinite(state.speed)?state.speed:0,steering:Number.isFinite(state.steering)?state.steering:0,pitch:Number.isFinite(state.pitch)?state.pitch:0,roll:Number.isFinite(state.roll)?state.roll:0,color:state.color||entry.color};
+ entry.targetAt=now;
+}
 function networkTick(dt){
  if(!networkActive||!networkPeer||networkPeer.destroyed)return;
- networkAccumulator+=dt;if(networkAccumulator<NETWORK_TICK)return;networkAccumulator=0;
+ // Render remote cars every animation frame. The old implementation returned
+ // between 10 Hz network sends, making remote cars visibly step and lag.
+ const blend=1-Math.exp(-dt*13);
+ for(const p of networkPlayers.values()){
+  if(p.mesh&&p.target){
+   p.mesh.position.lerp(new THREE.Vector3(p.target.x,p.target.y,p.target.z),blend);
+   const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
+   p.mesh.rotation.y+=delta*blend;
+   p.mesh.rotation.x=THREE.MathUtils.damp(p.mesh.rotation.x,p.target.pitch,12,dt);
+   p.mesh.rotation.z=THREE.MathUtils.damp(p.mesh.rotation.z,p.target.roll,12,dt);
+   p.mesh.traverse(obj=>{
+    if(!obj.isGroup||!obj.userData.axle)return;
+    const front=obj.userData.axle==='front';
+    obj.rotation.y=THREE.MathUtils.damp(obj.rotation.y,front?p.target.steering:0,14,dt);
+    obj.position.y=THREE.MathUtils.damp(obj.position.y,.48+(front?-p.target.pitch:p.target.pitch)*1.7,8,dt);
+    obj.children.forEach(child=>{if(child.isMesh&&child.userData.isTire)child.rotation.y+=p.target.speed/.39*dt;});
+   });
+  }
+ }
+ networkAccumulator+=dt;
+ if(networkAccumulator<NETWORK_TICK)return;
+ networkAccumulator%=NETWORK_TICK;
  const mine=currentNetworkState();
  if(networkHost){
   const states={host:mine};
@@ -922,13 +982,6 @@ function networkTick(dt){
   for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(packet);
  }else if(networkHostConn&&networkHostConn.open){
   networkHostConn.send({type:'state',state:mine});
- }
- for(const p of networkPlayers.values()){
-  if(p.mesh&&p.target){
-   p.mesh.position.lerp(new THREE.Vector3(p.target.x,p.target.y,p.target.z),.45);
-   const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
-   p.mesh.rotation.y+=delta*.45;
-  }
  }
 }
 function leaveMultiplayer(){
@@ -1112,6 +1165,8 @@ function update(dt){
  car.rotation.y=yaw;
  // Front tyre visuals must point the same way as the steering rack in both D and R.
  if(frontWheelMeshes)for(const wheel of frontWheelMeshes)wheel.rotation.y=steeringAngle;
+ // Spin all four tyre meshes from road speed; steering is applied to the front axle groups.
+ for(const assembly of wheelAssemblies)for(const child of assembly.children){if(child.isMesh&&child.userData.isTire)child.rotation.y+=speed/.39*dt;}
  const lateralG=THREE.MathUtils.clamp((speed*yawRate)/9.81,-0.65,0.65);
 // Short CC0 tyre squeal only on a hard, high-slip turn or handbrake slide.
 const hardSlide=Math.abs(lateralG)>0.27&&Math.abs(speed)>7&&(Math.abs(lateralSpeed)>1.15||handbrake>0);
