@@ -344,25 +344,23 @@ const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=m
 const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- const forest=13*Math.sin(z/205)+5.5*Math.sin(z/91)+2.2*Math.sin(z/37);
- const mountain=smooth(2850,3900,z)*(1-smooth(7700,8550,z));
- const hairpins=mountain*(
-   34*Math.sin((z-3300)/390)+
-   12*Math.sin((z-3300)/190)+
-   4.5*Math.sin((z-3300)/83));
- const returnBend=mountain*(
-   27*Math.tanh((z-5050)/115)-27*Math.tanh((z-5700)/115)+
-   -31*Math.tanh((z-6550)/125)+31*Math.tanh((z-7200)/125));
- const village=smooth(9650,10300,z);
- return (1-village)*(forest+hairpins+returnBend)+
-        village*(9*Math.sin(z/175)+3*Math.sin(z/68));
+ const forest=12*Math.sin(z/255)+4.2*Math.sin(z/118)+1.1*Math.sin(z/54);
+ const mountain=smooth(2900,4050,z)*(1-smooth(7550,8500,z));
+ // Broad linked switchbacks with eased transitions; no abrupt lateral jumps.
+ const climbBends=mountain*(30*Math.sin((z-3450)/470)+
+   13*Math.sin((z-3450)/235)+4*Math.sin((z-3450)/118));
+ const hairpinOne=mountain*(31*Math.tanh((z-4750)/170)-31*Math.tanh((z-5450)/170));
+ const hairpinTwo=mountain*(-34*Math.tanh((z-6250)/185)+34*Math.tanh((z-7000)/185));
+ const village=smooth(9600,10400,z);
+ return (1-village)*(forest+climbBends+hairpinOne+hairpinTwo)+
+        village*(8*Math.sin(z/220)+2.5*Math.sin(z/92));
 }
 function roadY(z){
- const climb=smooth(2750,5200,z);
- const summit=smooth(7100,8350,z);
- const descent=smooth(8200,10100,z);
- const rolling=1.8*Math.sin(z/170)+.75*Math.sin(z/49);
- return 3+rolling+44*climb-11*summit-36*descent;
+ const climb=smooth(2700,5050,z);
+ const summit=smooth(7000,8200,z);
+ const descent=smooth(8050,10050,z);
+ const rolling=1.15*Math.sin(z/205)+.42*Math.sin(z/73);
+ return 2.5+rolling+42*climb-9*summit-34*descent;
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
 function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
@@ -541,7 +539,13 @@ function stationText(textValue,x,y,z,size,color){
 }
 stationText('FUEL',58,4.3,12.77,4.1,'#ffffff');
 stationText('24/7 MART',48,3.55,-7.32,2.5,'#ffffff');stationText('FUEL',27,3.35,5.63,3.0,'#ffffff');
-fuelStop.visible=false;
+// Show the original station and place three matching stops at separated road sections.
+fuelStop.visible=true;
+for(const z of [3200,5750,8650,10900]){
+ const station=z===3200?stationGroup:stationGroup.clone(true);
+ station.position.set(roadX(z),roadY(z),worldZ(z));
+ if(z!==3200)fuelStop.add(station);
+}
 // stylized car model
 
 // Mountain rock faces and ridgelines frame the high switchback section.
@@ -552,19 +556,27 @@ for(let i=0;i<52;i++){
  rock.position.set(cx+side*(24+Math.random()*24),roadY(z)+5+Math.random()*8,worldZ(z)+(Math.random()-.5)*16);
  rock.rotation.z=(Math.random()-.5)*.22;scene.add(rock);
 }
-// Small hillside village at the end of the descent, with dirt clearings and simple houses.
+// Several small roadside settlements distributed across the forest route and valley.
 const villageGroundMat=mat(0x9c8b64), houseWallMats=[mat(0xd9bd8d),mat(0xc9d0bd),mat(0xd8a77f)], roofMat=mat(0x714c3a);
-for(let i=0;i<8;i++){
- const z=10300+i*19, side=i%2?1:-1, cx=roadX(z), cy=roadY(z), zz=worldZ(z);
- const clearing=new THREE.Mesh(new THREE.PlaneGeometry(17,18),villageGroundMat);clearing.rotation.x=-Math.PI/2;clearing.rotation.z=0;clearing.position.set(cx+side*14,cy+.015,zz);scene.add(clearing);
- const house=new THREE.Group();house.position.set(cx+side*(12+Math.random()*3),cy,zz);house.rotation.y=(Math.random()-.5)*.22;scene.add(house);
- const wall=new THREE.Mesh(new THREE.BoxGeometry(4.5,2.7,4),houseWallMats[i%houseWallMats.length]);wall.position.y=1.35;house.add(wall);
- const roof=new THREE.Mesh(new THREE.ConeGeometry(3.5,1.8,4),roofMat);roof.position.y=3.45;roof.rotation.y=Math.PI/4;house.add(roof);
- const door=new THREE.Mesh(new THREE.BoxGeometry(.7,1.5,.08),dark);door.position.set(0,.75,2.04);house.add(door);
- const windowMat=mat(0x8fc9d5);
- for(const wx of [-1.35,1.35]){const win=new THREE.Mesh(new THREE.BoxGeometry(.7,.65,.09),windowMat);win.position.set(wx,1.7,2.06);house.add(win);}
- if(i%2===0){const treeX=cx-side*8;tree(treeX,cy,zz+3,.8);}
+function buildVillage(centerZ,houseCount=6){
+ for(let i=0;i<houseCount;i++){
+  const z=centerZ+(i-Math.floor(houseCount/2))*17+(Math.random()-.5)*5;
+  const side=i%2?1:-1,cx=roadX(z),cy=roadY(z),zz=worldZ(z);
+  const offset=11+Math.random()*8;
+  const clearing=new THREE.Mesh(new THREE.PlaneGeometry(15+Math.random()*7,15+Math.random()*7),villageGroundMat);
+  clearing.rotation.x=-Math.PI/2;clearing.position.set(cx+side*offset,terrainHeight(cx+side*offset,z)+.025,zz);scene.add(clearing);
+  const house=new THREE.Group();
+  house.position.set(cx+side*(offset+4),terrainHeight(cx+side*(offset+4),z),zz);
+  house.rotation.y=(Math.random()-.5)*.3;scene.add(house);
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(4.5,2.7,4),houseWallMats[i%houseWallMats.length]);wall.position.y=1.35;house.add(wall);
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(3.5,1.8,4),roofMat);roof.position.y=3.45;roof.rotation.y=Math.PI/4;house.add(roof);
+  const door=new THREE.Mesh(new THREE.BoxGeometry(.7,1.5,.08),dark);door.position.set(0,.75,2.04);house.add(door);
+  const windowMat=mat(0x8fc9d5);
+  for(const wx of [-1.35,1.35]){const win=new THREE.Mesh(new THREE.BoxGeometry(.7,.65,.09),windowMat);win.position.set(wx,1.7,2.06);house.add(win);}
+  if(i%3===0)tree(cx-side*5,terrainHeight(cx-side*5,z),zz+4,.8);
+ }
 }
+for(const [z,count] of [[1650,5],[4450,4],[7850,5],[10350,8],[11450,4]])buildVillage(z,count);
 
 const car=new THREE.Group();scene.add(car);
 const body=new THREE.Mesh(new THREE.BoxGeometry(2.05,.72,4.0),redMat);body.position.y=.82;car.add(body);
