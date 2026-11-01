@@ -357,66 +357,84 @@ function roadY(z){
    9*smooth(1260,1480,z);
 }
 const worldZ=z=>z-trackLength/2;
-function makeStrip(width,y,material,offset=0){
- const verts=[],indices=[],n=trackLength-routeStart;
- for(let i=0;i<=n;i++){
-  const z=routeStart+i,x=roadX(z),dx=(roadX(z+1)-roadX(z-1))/2,dy=(roadY(z+1)-roadY(z-1))/2;
-  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv,half=width/2+offset;
-  // Slightly bank the cross-section to follow the road's vertical grade as well as its turns.
-  const bank=dy*pz;
-  verts.push(x-px*half, y+roadY(z)+bank*half*.12, worldZ(z)-pz*half,
-             x+px*half, y+roadY(z)-bank*half*.12, worldZ(z)+pz*half);
+// Streamed world: only a small window of terrain, road and forest exists around the player.
+const WORLD_CHUNK_LENGTH=180, WORLD_CHUNKS_BEHIND=2, WORLD_CHUNKS_AHEAD=3;
+const worldChunks=new Map();
+const forestRows=[8,15,23,33,46,62];
+const trunkGeo=new THREE.CylinderGeometry(.16,.25,1.9,5);
+const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12,1.9,6),new THREE.ConeGeometry(.82,1.65,6)];
+const markingGeo=new THREE.BoxGeometry(.13,.045,4.6);
+const postGeo=new THREE.BoxGeometry(.12,.82,.12);
+function addChunkStrip(group,zStart,zEnd,width,y,material){
+ const verts=[],indices=[],steps=Math.ceil((zEnd-zStart)/2);
+ for(let i=0;i<=steps;i++){
+  const z=Math.min(zEnd,zStart+i*2),x=roadX(z),dx=(roadX(z+1)-roadX(z-1))/2,dy=(roadY(z+1)-roadY(z-1))/2;
+  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv,half=width/2,bank=dy*pz;
+  verts.push(x-px*half,y+roadY(z)+bank*half*.12,worldZ(z)-pz*half,
+             x+px*half,y+roadY(z)-bank*half*.12,worldZ(z)+pz*half);
  }
- for(let i=0;i<n;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
+ for(let i=0;i<steps;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
- const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;mesh.frustumCulled=false;scene.add(mesh);
+ const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
-// Keep the terrain physically below the complete road corridor and station forecourt.
-const stationZ=10, stationWorldZ=worldZ(stationZ);
-const stationRoadX=roadX(stationZ), stationY=roadY(stationZ);
-function terrainHeight(x,z){
- const center=roadX(z),distance=Math.abs(x-center),elevation=roadY(z);
- const mountainBlend=smooth(255,370,z)*(1-smooth(690,875,z));
- const cliffBlend=smooth(6,58,distance);
- const ridgeDrop=mountainBlend*cliffBlend*Math.max(0,elevation-1.2);
- const rolling=1.45*Math.sin(x*.021+z*.010)+.82*Math.sin(x*.047-z*.014)+.42*Math.cos(z*.027+x*.019);
- const forestBlend=1-mountainBlend;
- const naturalHeight=elevation-ridgeDrop+rolling*(.22+forestBlend*.78);
- const roadBedBlend=1-smooth(3.7,11.5,distance);
- const roadBed=elevation-.34;
- let height=THREE.MathUtils.lerp(naturalHeight,Math.min(naturalHeight,roadBed),roadBedBlend);
- // Flatten the complete 60 x 46 m station footprint, with a 5 m transition apron.
- const sx=x-stationRoadX, sz=z-stationZ;
- const outsideX=Math.max(-sx,sx-60,0), outsideZ=Math.max(Math.abs(sz)-23,0);
- const outside=Math.max(outsideX,outsideZ);
- const stationBlend=1-smooth(0,5,outside);
- const stationGround=stationY-.22;
- height=THREE.MathUtils.lerp(height,Math.min(height,stationGround),stationBlend);
- return height;
-}
-{
- const xMin=-340,xMax=340,zMin=routeStart,zMax=trackLength,stepX=6,stepZ=6;
- const cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zMax-zMin)/stepZ),verts=[],indices=[];
+function buildWorldChunk(index){
+ const zStart=Math.max(routeStart,index*WORLD_CHUNK_LENGTH),zEnd=Math.min(trackLength,(index+1)*WORLD_CHUNK_LENGTH);
+ if(zEnd<=zStart)return null;
+ const group=new THREE.Group(),terrainVerts=[],terrainIndices=[];
+ const xMin=-125,xMax=125,stepX=10,stepZ=8,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
  for(let iz=0;iz<=rows;iz++){
-  const rz=Math.min(zMax,zMin+iz*stepZ),wz=worldZ(rz);
+  const z=Math.min(zEnd,zStart+iz*stepZ),wz=worldZ(z),center=roadX(z);
   for(let ix=0;ix<=cols;ix++){
-   const x=Math.min(xMax,xMin+ix*stepX);
-   verts.push(x,terrainHeight(x,rz),wz);
+   const x=center+xMin+ix*stepX;
+   terrainVerts.push(x,terrainHeight(x,z),wz);
   }
  }
  for(let iz=0;iz<rows;iz++)for(let ix=0;ix<cols;ix++){
   const a=iz*(cols+1)+ix,b=a+1,c=a+cols+1,d=c+1;
-  indices.push(a,c,b,b,c,d);
+  terrainIndices.push(a,c,b,b,c,d);
  }
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
- const terrain=new THREE.Mesh(geo,grassMat);terrain.material.side=THREE.DoubleSide;terrain.frustumCulled=false;scene.add(terrain);
+ const terrainGeo=new THREE.BufferGeometry();terrainGeo.setAttribute('position',new THREE.Float32BufferAttribute(terrainVerts,3));terrainGeo.setIndex(terrainIndices);terrainGeo.computeVertexNormals();
+ const terrain=new THREE.Mesh(terrainGeo,grassMat);terrain.material.side=THREE.DoubleSide;group.add(terrain);
+ addChunkStrip(group,zStart,zEnd,roadWidth+1.2,.025,edgeMat);
+ addChunkStrip(group,zStart,zEnd,roadWidth,.055,roadMat);
+ for(let z=Math.ceil(zStart/10)*10;z<zEnd;z+=10){
+  const dash=new THREE.Mesh(markingGeo,lineMat);dash.position.set(roadX(z),roadY(z)+.135,worldZ(z));dash.rotation.y=roadHeading(z);group.add(dash);
+ }
+ // Chunk-local instancing avoids allocating the entire forest at startup.
+ const estimate=Math.ceil((zEnd-zStart)/10)*forestRows.length*2+forestRows.length*4;
+ const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,estimate);
+ const crowns=leafMats.map((m,i)=>new THREE.InstancedMesh(crownGeos[i],m,estimate));
+ const dummy=new THREE.Object3D();let count=0;
+ for(let z=Math.ceil(zStart/10)*10;z<zEnd;z+=10){
+  const center=roadX(z),zz=worldZ(z);
+  for(const side of [-1,1])for(let row=0;row<forestRows.length;row++){
+   const distance=forestRows[row]+(Math.random()-.5)*3.5,x=center+side*distance+(Math.random()-.5)*4;
+   const groundY=terrainHeight(x,z),scale=.82+Math.random()*.72,offsetZ=(Math.random()-.5)*5;
+   dummy.position.set(x,groundY+.95*scale,zz+offsetZ);dummy.rotation.set(0,Math.random()*Math.PI*2,0);dummy.scale.set(scale,scale,scale);dummy.updateMatrix();trunks.setMatrixAt(count,dummy.matrix);
+   const heights=[2.0,2.82,3.55];
+   for(let layer=0;layer<3;layer++){dummy.position.set(x,groundY+heights[layer]*scale,zz+offsetZ);dummy.updateMatrix();crowns[layer].setMatrixAt(count,dummy.matrix);}
+   count++;
+  }
+ }
+ trunks.count=count;trunks.instanceMatrix.needsUpdate=true;group.add(trunks);
+ for(const inst of crowns){inst.count=count;inst.instanceMatrix.needsUpdate=true;group.add(inst);}
+ for(let z=Math.ceil(zStart/24)*24;z<zEnd;z+=24)for(const side of [-1,1]){
+  const post=new THREE.Mesh(postGeo,white);post.position.set(roadX(z)+side*4.15,roadY(z)+.41,worldZ(z));group.add(post);
+ }
+ scene.add(group);worldChunks.set(index,group);return group;
 }
-makeStrip(roadWidth+1.2,.025,edgeMat);
-makeStrip(roadWidth,.055,roadMat);
-// Continuous road markings also run through the approach behind the player spawn.
-for(let z=routeStart;z<trackLength;z+=10){
- const x=roadX(z),zz=worldZ(z),dash=new THREE.Mesh(new THREE.BoxGeometry(.13,.045,4.6),lineMat);
- dash.position.set(x,roadY(z)+.135,zz);dash.rotation.y=Math.atan2(roadX(z+1)-roadX(z-1),2);scene.add(dash);
+function updateWorldChunks(){
+ const playerZ=THREE.MathUtils.clamp(trackZ(),routeStart,trackLength-1);
+ const center=Math.floor(playerZ/WORLD_CHUNK_LENGTH);
+ const min=center-WORLD_CHUNKS_BEHIND,max=center+WORLD_CHUNKS_AHEAD;
+ for(let i=min;i<=max;i++)if(!worldChunks.has(i))buildWorldChunk(i);
+ for(const [i,group] of worldChunks){
+  if(i<min||i>max){
+   scene.remove(group);
+   group.traverse(o=>{if(o.isMesh&&o.geometry!==markingGeo&&o.geometry!==postGeo&&o.geometry!==trunkGeo&&!crownGeos.includes(o.geometry))o.geometry.dispose();});
+   worldChunks.delete(i);
+  }
+ }
 }
 // roadside posts and stylized low-poly hills/trees
 const trunkMat=mat(0x76543a), leafMats=[mat(0x347a54),mat(0x4c965c),mat(0x7db85e)], rockMat=mat(0x87939a);
@@ -425,46 +443,6 @@ function tree(x,y,z,s=1){
   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.14*s,.22*s,1.5*s,5),trunkMat);trunk.position.y=.75*s;g.add(trunk);
   for(let i=0;i<3;i++){const cone=new THREE.Mesh(new THREE.ConeGeometry((1.05-i*.19)*s,1.55*s,5),leafMats[(Math.random()*leafMats.length)|0]);cone.position.y=(1.5+i*.64)*s;g.add(cone);}
   g.position.set(x,y,z);scene.add(g);
-}
-// Dense multi-row forest rendered with instancing to keep draw calls low.
-{
- const forestRows=[8,15,23,33,46,62],zStep=10;
- const zCount=Math.ceil((trackLength-routeStart)/zStep),count=zCount*forestRows.length*2;
- const dummy=new THREE.Object3D();
- const trunkGeo=new THREE.CylinderGeometry(.16,.25,1.9,5);
- const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12,1.9,6),new THREE.ConeGeometry(.82,1.65,6)];
- const trunkInstances=new THREE.InstancedMesh(trunkGeo,trunkMat,count);
- const crownInstances=leafMats.map((m,i)=>new THREE.InstancedMesh(crownGeos[i],m,count));
- let index=0;
- for(let z=routeStart;z<trackLength;z+=zStep){
-  if(z>950&&z<1160)continue;
-  const center=roadX(z),zz=worldZ(z);
-  for(const side of [-1,1])for(let row=0;row<forestRows.length;row++){
-   const distance=forestRows[row]+(Math.random()-.5)*3.5;
-   const x=center+side*distance+(Math.random()-.5)*4,groundY=terrainHeight(x,z),scale=.82+Math.random()*.72;
-   dummy.position.set(x,groundY+.95*scale,zz+(Math.random()-.5)*5);
-   dummy.rotation.set(0,Math.random()*Math.PI*2,0);dummy.scale.set(scale,scale,scale);dummy.updateMatrix();
-   trunkInstances.setMatrixAt(index,dummy.matrix);
-   const crownHeights=[2.0,2.82,3.55];
-   for(let layer=0;layer<3;layer++){
-    dummy.position.set(x,groundY+crownHeights[layer]*scale,zz+(Math.random()-.5)*5);
-    dummy.rotation.set(0,Math.random()*Math.PI*2,0);dummy.scale.set(scale,scale,scale);dummy.updateMatrix();
-    crownInstances[layer].setMatrixAt(index,dummy.matrix);
-   }
-   index++;
-  }
- }
- trunkInstances.count=index;trunkInstances.instanceMatrix.needsUpdate=true;scene.add(trunkInstances);
- for(const inst of crownInstances){inst.count=index;inst.instanceMatrix.needsUpdate=true;scene.add(inst);}
-}
-// Reflective roadside posts continue along the approach and mountain route.
-for(let z=routeStart;z<trackLength;z+=24){
- if(z>950&&z<1160)continue;
- const cx=roadX(z),zz=worldZ(z);
- for(const side of [-1,1]){
-  const post=new THREE.Mesh(new THREE.BoxGeometry(.12,.82,.12),white);
-  post.position.set(cx+side*4.15,roadY(z)+.41,zz);scene.add(post);
- }
 }
 // distant mountains
 for(let i=0;i<18;i++){
@@ -607,7 +585,7 @@ function updateTraffic(dt){
  for(const t of trafficCars){
   t.z+=t.speed*dt;
   if(t.z>trackLength-18||t.z<playerZ-95){
-   t.z=playerZ+125+Math.random()*260;t.speed=9+Math.random()*12;t.lane=Math.random()<.5?-1.55:1.55;
+   t.z=playerZ+95+Math.random()*210;t.speed=9+Math.random()*12;t.lane=Math.random()<.5?-1.55:1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
   const laneDrift=Math.sin(performance.now()*.00045+t.phase)*.10;
@@ -671,7 +649,7 @@ document.querySelectorAll('[data-control]').forEach(el=>{
  const name=el.dataset.control;
  const down=e=>{e.preventDefault();touchInput[name]=true;syncControl(name);el.classList.add('active');try{el.setPointerCapture(e.pointerId)}catch{}};
  const up=e=>{e.preventDefault();touchInput[name]=false;syncControl(name);el.classList.remove('active');};
- el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);
+ el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('pointerleave',up);el.addEventListener('lostpointercapture',up);
 });
 let speed=0, yaw=0, lateralSpeed=0, yawRate=0, steeringAngle=0, rearWheelOmega=0, driftAmount=0, verticalVelocity=0, grounded=true, airtime=0, paused=true, started=false, last=performance.now();
 
@@ -852,7 +830,7 @@ document.querySelectorAll('[data-gear]').forEach(el=>el.addEventListener('click'
 // Lightweight host-relayed WebRTC multiplayer. Room keys are PeerJS peer IDs;
 // no game server or database is required for small friend rooms.
 let networkPeer=null, networkHost=false, networkRoomCode='', networkHostConn=null;
-let networkPlayers=new Map(), networkSlot=0, networkAccumulator=0, networkActive=false;
+let networkPlayers=new Map(), networkSlot=0, networkAccumulator=0, networkActive=false, networkSequence=0;
 const NETWORK_MAX_PLAYERS=5, NETWORK_TICK=1/30; // 30 Hz state exchange; remote rendering runs every frame.
 const networkHud=document.getElementById('networkHud');
 function setRoomStatus(id,message){const el=document.getElementById(id);if(el)el.textContent=message;}
@@ -895,7 +873,7 @@ function sendToRoom(data){
  if(networkHost){for(const p of networkPlayers.values())if(p.conn&&p.conn.open)p.conn.send(data);}
  else if(networkHostConn&&networkHostConn.open)networkHostConn.send(data);
 }
-function currentNetworkState(){return {x:car.position.x,y:car.position.y,z:car.position.z,yaw,speed,steering:steeringAngle,pitch:car.rotation.x,roll:car.rotation.z,color:carStyles[selectedCar]?.color||0xe95b49};}
+function currentNetworkState(){return {seq:++networkSequence,sentAt:performance.now(),x:car.position.x,y:car.position.y,z:car.position.z,yaw,speed,steering:steeringAngle,pitch:car.rotation.x,roll:car.rotation.z,color:carStyles[selectedCar]?.color||0xe95b49};}
 function applyNetworkSnapshot(states){
  for(const [id,state] of Object.entries(states||{})){
   if((networkHost&&id==='host')||(!networkHost&&id===networkPeer?.id))continue;
@@ -924,9 +902,13 @@ function hostHandleConnection(conn){
    // Update both the authoritative state relayed to guests and this host's
    // interpolation target. Previously only p.state changed, so the host's
    // remote car stayed frozen at its initial spawn position.
-   if(p&&state&&Number.isFinite(state.x)&&Number.isFinite(state.y)&&Number.isFinite(state.z)&&Number.isFinite(state.yaw)){
+   if(p&&state&&Number.isFinite(state.x)&&Number.isFinite(state.y)&&Number.isFinite(state.z)&&Number.isFinite(state.yaw)&&(!Number.isFinite(p.lastSeq)||!Number.isFinite(state.seq)||state.seq>p.lastSeq)){
+    p.lastSeq=Number.isFinite(state.seq)?state.seq:(p.lastSeq||0)+1;
     p.state={...state,color:p.color};
     setRemoteTarget(p,p.state);
+    // Relay fresh guest input immediately instead of waiting for the next host tick.
+    const snapshot={type:'snapshot',players:{host:currentNetworkState(),...Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer&&p.state).map(([id,player])=>[id,{...(player.state||networkSpawn(player.slot)),color:player.color}]))}};
+    for(const player of networkPlayers.values())if(player.conn&&player.conn.open)player.conn.send(snapshot);
    }
   }
  });
@@ -954,8 +936,9 @@ async function joinMultiplayerRoom(){
  try{
   networkPeer=new Peer();
   networkPeer.on('open',()=>{
-   networkHostConn=networkPeer.connect('pdrive-'+code,{reliable:true});
-   networkHostConn.on('open',()=>networkHostConn.send({type:'join'}));
+   networkHostConn=networkPeer.connect('pdrive-'+code,{reliable:true,serialization:'json'});
+   const joinTimeout=setTimeout(()=>{if(!networkHostConn.open)setRoomStatus('roomJoinStatus','Connection timed out. Check the room key and try again.');},12000);
+   networkHostConn.on('open',()=>{clearTimeout(joinTimeout);networkHostConn.send({type:'join'});});
    networkHostConn.on('data',data=>{
     if(data.type==='full'){setRoomStatus('roomJoinStatus','Room is full (maximum 5 players).');networkHostConn.close();return;}
     if(data.type==='welcome'){
@@ -1047,7 +1030,8 @@ document.getElementById('chooseCarBtn').addEventListener('click',()=>{document.g
 document.getElementById('backToMenuBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='none';});
 document.querySelectorAll('[data-car]').forEach(btn=>btn.addEventListener('click',()=>{applyCarStyle(btn.dataset.car);launchGame();}));
 function update(dt){
- if(paused)return;
+ updateWorldChunks();
+ if(paused){networkTick(dt);return;}
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
  // Sports mode switches to a lighter, high-torque rally setup with stronger brakes and grip.
