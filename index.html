@@ -987,10 +987,14 @@ function networkTick(dt){
  if(!networkActive||!networkPeer||networkPeer.destroyed)return;
  // Render remote cars every animation frame. The old implementation returned
  // between 10 Hz network sends, making remote cars visibly step and lag.
- const blend=1-Math.exp(-dt*24);
  for(const p of networkPlayers.values()){
   if(p.mesh&&p.target){
-   p.mesh.position.set(THREE.MathUtils.damp(p.mesh.position.x,p.target.x,24,dt),THREE.MathUtils.damp(p.mesh.position.y,p.target.y,24,dt),THREE.MathUtils.damp(p.mesh.position.z,p.target.z,24,dt));
+   // Compensate for the 30 Hz packet interval with a short, capped forward prediction.
+   // This reduces the visible trailing effect without allowing stale packets to run away.
+   const lead=Math.min(.075,Math.max(0,(performance.now()-p.targetAt)/1000));
+   const predictedX=p.target.x+Math.sin(p.target.yaw)*p.target.speed*lead;
+   const predictedZ=p.target.z+Math.cos(p.target.yaw)*p.target.speed*lead;
+   p.mesh.position.set(THREE.MathUtils.damp(p.mesh.position.x,predictedX,30,dt),THREE.MathUtils.damp(p.mesh.position.y,p.target.y,30,dt),THREE.MathUtils.damp(p.mesh.position.z,predictedZ,30,dt));
    const delta=Math.atan2(Math.sin(p.target.yaw-p.mesh.rotation.y),Math.cos(p.target.yaw-p.mesh.rotation.y));
    p.mesh.rotation.y+=delta*(1-Math.exp(-dt*20));
    p.mesh.rotation.x=THREE.MathUtils.damp(p.mesh.rotation.x,p.target.pitch,12,dt);
