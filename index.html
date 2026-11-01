@@ -357,16 +357,20 @@ function roadY(z){
    9*smooth(1260,1480,z);
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
+function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
+function roadNormal(z){
+ const inv=1/Math.sqrt(1+roadSlope(z)*roadSlope(z));
+ return {x:inv,z:-roadSlope(z)*inv};
+}
 function terrainHeight(x,z){
- const distance=Math.abs(x-roadX(z));
- const shoulder=roadY(z)-1.15+Math.min(distance,90)*0.018;
- const rolling=Math.sin(x*0.031+z*0.017)*1.35+Math.sin(x*0.014-z*0.023)*1.05;
- const hillside=Math.sin(z*0.006+x*0.004)*1.8;
+ const normal=roadNormal(z),dx=x-roadX(z);
+ const lateralDistance=Math.abs(dx*normal.x);
+ const shoulder=roadY(z)-1.35+Math.min(lateralDistance,90)*0.018;
+ const rolling=Math.sin(x*0.031+z*0.017)*1.15+Math.sin(x*0.014-z*0.023)*.9;
+ const hillside=Math.sin(z*0.006+x*0.004)*1.55;
  const natural=shoulder+rolling+hillside;
- // Keep the terrain mesh safely below the paved strip and blend it back
- // into the natural shoulder outside the road edges.
- const roadBlend=1-THREE.MathUtils.smoothstep(distance,roadWidth/2+0.5,roadWidth/2+9);
- const belowRoad=Math.min(natural,roadY(z)-0.42);
+ const roadBlend=1-THREE.MathUtils.smoothstep(lateralDistance,roadWidth/2+.75,roadWidth/2+10);
+ const belowRoad=Math.min(natural,roadY(z)-.5);
  return THREE.MathUtils.lerp(natural,belowRoad,roadBlend);
 }
 const worldZ=z=>z-trackLength/2;
@@ -379,10 +383,9 @@ const crownGeos=[new THREE.ConeGeometry(1.45,2.15,6),new THREE.ConeGeometry(1.12
 const markingGeo=new THREE.BoxGeometry(.13,.045,4.6);
 const postGeo=new THREE.BoxGeometry(.12,.82,.12);
 function addChunkStrip(group,zStart,zEnd,width,y,material){
- const verts=[],indices=[],steps=Math.ceil((zEnd-zStart)/2);
+ const verts=[],indices=[],steps=Math.ceil((zEnd-zStart)/1);
  for(let i=0;i<=steps;i++){
-  const z=Math.min(zEnd,zStart+i*2),x=roadX(z),dx=(roadX(z+1)-roadX(z-1))/2,dy=(roadY(z+1)-roadY(z-1))/2;
-  const inv=1/Math.sqrt(1+dx*dx),px=inv,pz=-dx*inv,half=width/2,bank=dy*pz;
+  const z=Math.min(zEnd,zStart+i),x=roadX(z),normal=roadNormal(z),px=normal.x,pz=normal.z,half=width/2,dy=(roadY(z+1)-roadY(z-1))/2,bank=dy*pz;
   verts.push(x-px*half,y+roadY(z)+bank*half*.12,worldZ(z)-pz*half,
              x+px*half,y+roadY(z)-bank*half*.12,worldZ(z)+pz*half);
  }
@@ -394,7 +397,7 @@ function buildWorldChunk(index){
  const zStart=Math.max(routeStart,index*WORLD_CHUNK_LENGTH),zEnd=Math.min(trackLength,(index+1)*WORLD_CHUNK_LENGTH);
  if(zEnd<=zStart)return null;
  const group=new THREE.Group(),terrainVerts=[],terrainIndices=[];
- const xMin=-125,xMax=125,stepX=10,stepZ=8,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
+ const xMin=-125,xMax=125,stepX=8,stepZ=6,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
  for(let iz=0;iz<=rows;iz++){
   const z=Math.min(zEnd,zStart+iz*stepZ),wz=worldZ(z),center=roadX(z);
   for(let ix=0;ix<=cols;ix++){
@@ -632,9 +635,9 @@ function updateTraffic(dt){
    t.z=playerZ+115+Math.random()*300;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
-  const laneDrift=Math.sin(now+t.phase)*(.035+Math.random()*.0005);
-  t.mesh.position.set(roadX(z)+t.lane+laneDrift,roadY(z)+.03,worldZ(z));
-  // Incoming traffic faces the player; same-direction traffic follows the road.
+  const laneDrift=Math.sin(now+t.phase)*.035;
+  const laneOffset=t.lane+laneDrift,normal=roadNormal(z);
+  t.mesh.position.set(roadX(z)+normal.x*laneOffset,roadY(z)+.03,worldZ(z)+normal.z*laneOffset);
   t.mesh.rotation.set(0,heading+(t.direction<0?Math.PI:0),0);
  }
  // Mild randomized speed variation keeps the traffic from moving as a rigid convoy.
