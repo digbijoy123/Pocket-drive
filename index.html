@@ -340,21 +340,19 @@ const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness,f
 const grassMat=mat(0x6fae61), roadMat=mat(0x424b56), edgeMat=mat(0xf4e9d2), lineMat=mat(0xffd77b);
 const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=mat(0x8fc9d5), redMat=mat(0xe95b49), yellowMat=mat(0xf2c14e);
 // One continuous forest road: linked sweeping bends, tight hairpin-like switchbacks and rolling elevation.
-const trackLength=1600, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
+const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- const broad=19*Math.sin(z/92)+10*Math.sin(z/47);
- const tight=5.2*Math.sin(z/18)+2.3*Math.sin(z/11);
- const hairpinA=34*Math.tanh((z-390)/24)-34*Math.tanh((z-505)/24);
- const hairpinB=-38*Math.tanh((z-825)/25)+38*Math.tanh((z-945)/25);
- const hairpinC=31*Math.tanh((z-1190)/23)-31*Math.tanh((z-1300)/23);
- return broad+tight+hairpinA+hairpinB+hairpinC;
+ // Harmonic curves repeat exactly at the route boundary, so the long loop has no road-position snap.
+ const phase=Math.PI*2*z/trackLength;
+ return 18*Math.sin(phase*3)+9*Math.sin(phase*7)+
+        4.2*Math.sin(phase*19)+1.8*Math.sin(phase*31);
 }
 function roadY(z){
- return 7*Math.sin(z/185)+3.2*Math.sin(z/73)+
-   10*smooth(170,430,z)-8*smooth(430,590,z)+
-   12*smooth(690,970,z)-13*smooth(970,1170,z)+
-   9*smooth(1260,1480,z);
+ // Smooth rolling elevation with matching height and slope at the loop seam.
+ const phase=Math.PI*2*z/trackLength;
+ return 5.5*Math.sin(phase*2)+2.6*Math.sin(phase*5)+
+        1.8*Math.sin(phase*11)+1.0*Math.sin(phase*17);
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
 function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
@@ -394,7 +392,7 @@ function addChunkStrip(group,zStart,zEnd,width,y,material){
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
 function buildWorldChunk(index){
- const zStart=Math.max(routeStart,index*WORLD_CHUNK_LENGTH),zEnd=Math.min(trackLength,(index+1)*WORLD_CHUNK_LENGTH);
+ const zStart=index*WORLD_CHUNK_LENGTH,zEnd=(index+1)*WORLD_CHUNK_LENGTH;
  if(zEnd<=zStart)return null;
  const group=new THREE.Group(),terrainVerts=[],terrainIndices=[];
  const xMin=-125,xMax=125,stepX=8,stepZ=6,cols=Math.ceil((xMax-xMin)/stepX),rows=Math.ceil((zEnd-zStart)/stepZ);
@@ -440,7 +438,7 @@ function buildWorldChunk(index){
  scene.add(group);worldChunks.set(index,group);return group;
 }
 function updateWorldChunks(){
- const playerZ=THREE.MathUtils.clamp(trackZ(),routeStart,trackLength-1);
+ const playerZ=trackZ();
  const center=Math.floor(playerZ/WORLD_CHUNK_LENGTH);
  const min=center-WORLD_CHUNKS_BEHIND,max=center+WORLD_CHUNKS_AHEAD;
  const needed=[];
@@ -486,7 +484,7 @@ function stationBox(w,h,d,material,x,y,z,parent=fuelStop){
 }
 // Coordinates are relative to the road centre, so the station follows this road section.
 // These coordinates are also used by the forecourt collision check in update().
-const stationZ=560;
+const stationZ=3200;
 const stationRoadX=roadX(stationZ);
 const stationY=roadY(stationZ);
 const stationWorldZ=worldZ(stationZ);
@@ -594,7 +592,7 @@ car.position.set(roadX(10)-1.55,roadY(10), -trackLength/2+10);
 // Ambient AI traffic with randomized headways and mixed cruising speeds.
 const trafficCars=[];
 const trafficColors=[0x39a9ff,0xf2c14e,0x52c878,0xb58cff,0xe87945,0xd8dce2,0xe85d75,0x72c9bd];
-const TRAFFIC_TOTAL=14, TRAFFIC_ONCOMING=7;
+const TRAFFIC_TOTAL=18, TRAFFIC_ONCOMING=9;
 function createTrafficCar(index){
  const mesh=car.clone(true),color=trafficColors[index%trafficColors.length];
  mesh.traverse(obj=>{
@@ -620,8 +618,8 @@ function playerTrafficSpawn(index,incoming){
  // Keep both streams inside the visible streamed-world window and stagger them.
  const slot=incoming?index:index-TRAFFIC_ONCOMING;
  return incoming
-  ?playerZ+105+slot*42+Math.random()*24
-  :playerZ+72+slot*48+Math.random()*24;
+  ?playerZ+95+slot*46+Math.random()*28
+  :playerZ+78+slot*50+Math.random()*28;
 }
 for(let i=0;i<TRAFFIC_TOTAL;i++)createTrafficCar(i);
 function updateTraffic(dt){
@@ -630,9 +628,9 @@ function updateTraffic(dt){
   t.z+=t.speed*t.direction*dt;
   // Recycle each stream at opposite ends of the player's streamed-world window.
   if(t.direction>0&&(t.z>playerZ+WORLD_CHUNK_LENGTH*2.35||t.z>trackLength-18)){
-   t.z=playerZ+82+Math.random()*300;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;
+   t.z=playerZ+90+Math.random()*320;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;
   }else if(t.direction<0&&(t.z<playerZ-WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
-   t.z=playerZ+115+Math.random()*300;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
+   t.z=playerZ+105+Math.random()*320;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
   const laneDrift=Math.sin(now+t.phase)*.035;
@@ -1220,6 +1218,8 @@ function update(dt){
    car.position.z=-trackLength/2+10;z=10;
    car.position.x=roadX(z)+offset;
    yaw=roadHeading(z)+(yaw-roadHeading(trackLength-3));
+   // Re-seed both traffic streams after the lap wrap so neither direction disappears for a full circuit.
+   for(const t of trafficCars){t.z=z+(t.direction<0?105:82)+Math.random()*260;}
    showToast('ROUTE LOOP · KEEP DRIVING');
  }
  z=THREE.MathUtils.clamp(z,0,trackLength);
