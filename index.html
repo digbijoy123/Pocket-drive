@@ -343,16 +343,20 @@ const white=mat(0xf1f3ee), dark=mat(0x24313d), tireMat=mat(0x20262c), glassMat=m
 const trackLength=12000, roadWidth=6.4, approachLength=260, routeStart=-approachLength;
 function smooth(a,b,z){return THREE.MathUtils.smoothstep(z,a,b);}
 function roadX(z){
- // Harmonic curves repeat exactly at the route boundary, so the long loop has no road-position snap.
- const phase=Math.PI*2*z/trackLength;
- return 18*Math.sin(phase*3)+9*Math.sin(phase*7)+
-        4.2*Math.sin(phase*19)+1.8*Math.sin(phase*31);
+ // Long approach, then a sequence of broad switchbacks that wrap the central massif.
+ const approach=18*Math.sin(z*.0018)+7*Math.sin(z*.0045);
+ const mountain=THREE.MathUtils.smoothstep(z,3600,4700)*(1-THREE.MathUtils.smoothstep(z,8300,9300));
+ const switchbacks=mountain*(31*Math.sin((z-4300)*Math.PI/720)+8*Math.sin((z-4300)*Math.PI/240));
+ const returnBends=9*Math.sin(z*.0017)+4*Math.sin(z*.0041);
+ return approach+switchbacks+returnBends;
 }
 function roadY(z){
- // Smooth rolling elevation with matching height and slope at the loop seam.
- const phase=Math.PI*2*z/trackLength;
- return 5.5*Math.sin(phase*2)+2.6*Math.sin(phase*5)+
-        1.8*Math.sin(phase*11)+1.0*Math.sin(phase*17);
+ // The road climbs through the foothills, reaches a high summit shelf, then descends
+ // on the far side before returning to the lower valley.
+ const climb=42*THREE.MathUtils.smoothstep(z,2800,6200);
+ const descent=42*THREE.MathUtils.smoothstep(z,7000,10300);
+ const rolling=1.8*Math.sin(z*.0031)+.8*Math.sin(z*.007);
+ return 3+climb-descent+rolling;
 }
 // Continuous surrounding ground elevation for streamed terrain and off-road vehicle support.
 function roadSlope(z){return (roadX(z+1)-roadX(z-1))/2;}
@@ -366,7 +370,12 @@ function terrainHeight(x,z){
  const shoulder=roadY(z)-.12+Math.max(0,lateralDistance-roadWidth/2)*0.018;
  const rolling=Math.sin(x*0.031+z*0.017)*.38+Math.sin(x*0.014-z*0.023)*.30;
  const hillside=Math.sin(z*0.006+x*0.004)*.48;
- const natural=shoulder+rolling+hillside;
+ // Central mountain massif: a broad ridge with steep outer shoulders and a high summit.
+ const mountainBlend=Math.exp(-Math.pow((z-6500)/2450,2));
+ const mountainRadius=Math.exp(-Math.pow((x-2)/82,2));
+ const massif=mountainBlend*mountainRadius*58;
+ const ridges=mountainBlend*(Math.sin(x*.075+z*.012)*2.1+Math.sin(x*.13-z*.018)*1.2);
+ const natural=shoulder+rolling+hillside+massif+ridges;
  const roadBlend=1-THREE.MathUtils.smoothstep(lateralDistance,roadWidth/2,roadWidth/2+5);
  const belowRoad=roadY(z)-.12;
  return THREE.MathUtils.lerp(natural,belowRoad,roadBlend);
@@ -391,6 +400,26 @@ function addChunkStrip(group,zStart,zEnd,width,y,material){
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
  const mesh=new THREE.Mesh(geo,material);mesh.material.side=THREE.DoubleSide;group.add(mesh);
 }
+const trailMaterial=mat(0x806447);
+function addDirtTrail(group,zStart,zEnd,side,reach,phase=0){
+ const start=Math.max(zStart,0),end=Math.min(zEnd,trackLength);
+ if(end-start<2)return;
+ const verts=[],indices=[],steps=Math.ceil(end-start);
+ const dirtMat=trailMaterial;
+ for(let i=0;i<=steps;i++){
+  const z=start+(end-start)*i/steps;
+  const u=(z-zStart)/(zEnd-zStart);
+  // Trails leave and rejoin the asphalt smoothly; their middle section wanders through the forest.
+  const offset=side*reach*Math.pow(Math.sin(Math.PI*u),.82)+Math.sin(u*Math.PI*2+phase)*2.2*Math.sin(Math.PI*u);
+  const x=roadX(z)+offset,half=1.65;
+  const y=terrainHeight(x,z)+.10;
+  verts.push(x-half,y,worldZ(z),x+half,y,worldZ(z));
+ }
+ for(let i=0;i<steps;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
+ const mesh=new THREE.Mesh(geo,dirtMat);mesh.material.side=THREE.DoubleSide;group.add(mesh);
+}
+
 function buildWorldChunk(index){
  const zStart=index*WORLD_CHUNK_LENGTH,zEnd=(index+1)*WORLD_CHUNK_LENGTH;
  if(zEnd<=zStart)return null;
@@ -411,6 +440,10 @@ function buildWorldChunk(index){
  const terrain=new THREE.Mesh(terrainGeo,grassMat);terrain.material.side=THREE.DoubleSide;group.add(terrain);
  addChunkStrip(group,zStart,zEnd,roadWidth+1.2,.025,edgeMat);
  addChunkStrip(group,zStart,zEnd,roadWidth,.055,roadMat);
+ // Three optional dirt routes: two reconnecting shortcuts and one remote exploration spur.
+ addDirtTrail(group,900,1580,1,27,.4);
+ addDirtTrail(group,3850,5050,-1,34,1.2);
+ addDirtTrail(group,7600,8750,1,42,2.1);
  for(let z=Math.ceil(zStart/10)*10;z<zEnd;z+=10){
   const dash=new THREE.Mesh(markingGeo,lineMat);dash.position.set(roadX(z),roadY(z)+.135,worldZ(z));dash.rotation.y=roadHeading(z);group.add(dash);
  }
