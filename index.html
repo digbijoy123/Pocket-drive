@@ -572,7 +572,8 @@ car.position.set(roadX(10)-1.55,roadY(10), -trackLength/2+10);
 
 // Ambient AI traffic with randomized headways and mixed cruising speeds.
 const trafficCars=[];
-const trafficColors=[0x39a9ff,0xf2c14e,0x52c878,0xb58cff,0xe87945,0xd8dce2];
+const trafficColors=[0x39a9ff,0xf2c14e,0x52c878,0xb58cff,0xe87945,0xd8dce2,0xe85d75,0x72c9bd];
+const TRAFFIC_TOTAL=13, TRAFFIC_ONCOMING=5;
 function createTrafficCar(index){
  const mesh=car.clone(true),color=trafficColors[index%trafficColors.length];
  mesh.traverse(obj=>{
@@ -581,24 +582,41 @@ function createTrafficCar(index){
   const copies=materials.map(source=>{const m=source.clone();if(m.color&&(source===redMat||source===yellowMat||source.color.getHex()===redMat.color.getHex()||source.color.getHex()===yellowMat.color.getHex()))m.color.setHex(color);return m;});
   obj.material=Array.isArray(obj.material)?copies:copies[0];
  });
- mesh.scale.setScalar(.94+Math.random()*.08);scene.add(mesh);
- const traffic={mesh,z:95+index*68+Math.random()*22,speed:10+Math.random()*9,lane:index%2===0?-1.55:1.55,phase:Math.random()*Math.PI*2};
+ mesh.scale.setScalar(.90+Math.random()*.18);
+ scene.add(mesh);
+ const incoming=index<TRAFFIC_ONCOMING;
+ const direction=incoming?-1:1;
+ const lane=incoming?1.55:(Math.random()<.72?-1.55:1.55);
+ const z=playerTrafficSpawn(index,incoming);
+ const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0};
+ traffic.baseSpeed=traffic.speed;
  trafficCars.push(traffic);return traffic;
 }
-for(let i=0;i<7;i++)createTrafficCar(i);
-function updateTraffic(dt){
+function playerTrafficSpawn(index,incoming){
  const playerZ=trackZ();
+ return incoming?playerZ+150+index*54+Math.random()*36:playerZ+95+index*58+Math.random()*32;
+}
+for(let i=0;i<TRAFFIC_TOTAL;i++)createTrafficCar(i);
+function updateTraffic(dt){
+ const playerZ=trackZ(),now=performance.now()*.00045;
  for(const t of trafficCars){
-  t.z+=t.speed*dt;
-  if(t.z>trackLength-18||t.z<playerZ-95){
-   t.z=playerZ+95+Math.random()*210;t.speed=9+Math.random()*12;t.lane=Math.random()<.5?-1.55:1.55;
+  t.z+=t.speed*t.direction*dt;
+  // Recycle each stream at opposite ends of the player's streamed-world window.
+  if(t.direction>0&&(t.z>playerZ+WORLD_CHUNK_LENGTH*2.35||t.z>trackLength-18)){
+   t.z=playerZ+105+Math.random()*245;t.speed=8+Math.random()*14;t.baseSpeed=t.speed;t.lane=Math.random()<.72?-1.55:1.55;
+  }else if(t.direction<0&&(t.z<playerZ- WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
+   t.z=playerZ+185+Math.random()*260;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
-  const laneDrift=Math.sin(performance.now()*.00045+t.phase)*.10;
+  const laneDrift=Math.sin(now+t.phase)*(.035+Math.random()*.0005);
   t.mesh.position.set(roadX(z)+t.lane+laneDrift,roadY(z)+.03,worldZ(z));
-  t.mesh.rotation.set(0,heading,0);
-  const leader=trafficCars.find(other=>other!==t&&other.lane===t.lane&&other.z>t.z&&other.z-t.z<17);
-  if(leader)t.speed=Math.min(t.speed,Math.max(7,leader.speed-1.2));
+  // Incoming traffic faces the player; same-direction traffic follows the road.
+  t.mesh.rotation.set(0,heading+(t.direction<0?Math.PI:0),0);
+ }
+ // Mild randomized speed variation keeps the traffic from moving as a rigid convoy.
+ for(const t of trafficCars){
+  const variation=Math.sin(now*1.7+t.phase)*.8+Math.sin(now*.63+t.phase*2)*.45;
+  t.speed=THREE.MathUtils.clamp(t.baseSpeed+variation,t.direction<0?11:7,t.direction<0?30:24);
  }
 }
 
@@ -889,7 +907,9 @@ function applyNetworkSnapshot(states){
  for(const [id] of networkPlayers){if(!states||!states[id])removeRemotePlayer(id);}
 }
 function hostHandleConnection(conn){
- conn.on('open',()=>{});
+ // Register the data listener immediately; PeerJS can deliver the first
+ // application packet as soon as the data channel opens.
+ conn.on('open',()=>{setRoomStatus('roomHostStatus','Player connected · syncing room…');});
  conn.on('data',data=>{
   if(!data||typeof data!=='object')return;
   if(data.type==='join'){
@@ -913,7 +933,7 @@ function hostHandleConnection(conn){
     p.state={...state,color:p.color};
     setRemoteTarget(p,p.state);
     // Relay fresh guest input immediately instead of waiting for the next host tick.
-    const snapshot={type:'snapshot',players:{host:currentNetworkState(),...Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer&&p.state).map(([id,player])=>[id,{...(player.state||networkSpawn(player.slot)),color:player.color}]))}};
+    const snapshot={type:'snapshot',players:{host:currentNetworkState(),...Object.fromEntries([...networkPlayers].filter(([id])=>id!==conn.peer).map(([id,player])=>[id,{...(player.state||networkSpawn(player.slot)),color:player.color}]))}};
     for(const player of networkPlayers.values())if(player.conn&&player.conn.open)player.conn.send(snapshot);
    }
   }
@@ -1029,7 +1049,13 @@ document.getElementById('createRoomBtn').addEventListener('click',createMultipla
 document.getElementById('joinRoomBtn').addEventListener('click',joinMultiplayerRoom);
 document.getElementById('joinRoomCode').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,'').slice(0,6);});
 document.getElementById('copyRoomCodeBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(networkRoomCode);setRoomStatus('roomHostStatus','Room key copied · waiting for friends…');}catch(_){setRoomStatus('roomHostStatus','Room key: '+networkRoomCode);}});
-document.getElementById('startRoomGameBtn').addEventListener('click',()=>{networkActive=true;networkSlot=0;setLocalNetworkSpawn(0);setNetworkHud('ROOM '+networkRoomCode+' · '+(networkPlayers.size+1)+' / 5 PLAYERS');launchGame();});
+document.getElementById('startRoomGameBtn').addEventListener('click',()=>{
+ if(!networkPeer||networkPeer.destroyed||!networkHost){setRoomStatus('roomHostStatus','Room is not ready. Create a new room.');return;}
+ networkHost=true;networkActive=true;networkSlot=0;networkAccumulator=0;
+ setLocalNetworkSpawn(0);
+ setNetworkHud('ROOM '+networkRoomCode+' · '+(networkPlayers.size+1)+' / 5 PLAYERS');
+ launchGame();
+});
 
 document.getElementById('startBtn').addEventListener('click',launchGame);
 document.getElementById('chooseCarBtn').addEventListener('click',()=>{document.getElementById('carSelectScreen').style.display='flex';});
