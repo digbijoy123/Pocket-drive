@@ -609,7 +609,7 @@ function createTrafficCar(index){
  // oncoming cars stay in the opposing right lane.
  const lane=incoming?1.55:-1.55;
  const z=playerTrafficSpawn(index,incoming);
- const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0,crashed:false,crashAge:0,crashVX:0,crashVZ:0,crashSpin:0,crashLift:0};
+ const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0,crashed:false,crashAge:0,crashVX:0,crashVZ:0,crashSpin:0,crashLift:0,crashVy:0};
  traffic.baseSpeed=traffic.speed;
  trafficCars.push(traffic);return traffic;
 }
@@ -629,8 +629,9 @@ function updateTraffic(dt){
    t.crashAge+=dt;t.crashVX*=Math.exp(-.42*dt);t.crashVZ*=Math.exp(-.42*dt);
    t.mesh.position.x+=t.crashVX*dt;t.mesh.position.z+=t.crashVZ*dt;
    const crashZ=THREE.MathUtils.clamp(t.mesh.position.z+trackLength/2,routeStart,trackLength-1);
-   t.mesh.position.y=Math.max(roadY(crashZ)+.03,t.mesh.position.y-t.crashLift*dt);
-   t.crashLift=Math.max(0,t.crashLift-9.81*dt);
+   t.crashVy-=9.81*dt;t.mesh.position.y+=t.crashVy*dt;
+   const crashGround=roadY(crashZ)+.03;
+   if(t.mesh.position.y<crashGround){t.mesh.position.y=crashGround;t.crashVy=Math.abs(t.crashVy)*.22;if(t.crashVy<.8)t.crashVy=0;}
    t.mesh.rotation.x+=t.crashSpin*dt;
    t.mesh.rotation.z=THREE.MathUtils.damp(t.mesh.rotation.z,t.crashSpin*.12,1.8,dt);
    t.crashSpin*=Math.exp(-1.0*dt);
@@ -667,7 +668,7 @@ function updateTraffic(dt){
   const impact=THREE.MathUtils.clamp(closing,2,34);
   t.crashVX=nx*(impact*.72)+playerVX*.24;t.crashVZ=nz*(impact*.72)+playerVZ*.24;
   t.crashSpin=(nx*Math.cos(yaw)-nz*Math.sin(yaw))*(1.8+impact*.11)+(Math.random()-.5)*1.2;
-  t.crashLift=Math.min(5,impact*.12);
+  t.crashLift=Math.min(5,impact*.12);t.crashVy=t.crashLift;
   t.mesh.position.x+=nx*(3.35-distance+.08);t.mesh.position.z+=nz*(3.35-distance+.08);
   t.mesh.rotation.y=Math.atan2(t.crashVX,t.crashVZ);
   t.mesh.rotation.x=(Math.random()-.5)*.18;t.mesh.rotation.z=(Math.random()-.5)*.16;
