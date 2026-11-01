@@ -609,7 +609,7 @@ function createTrafficCar(index){
  // oncoming cars stay in the opposing right lane.
  const lane=incoming?1.55:-1.55;
  const z=playerTrafficSpawn(index,incoming);
- const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0};
+ const traffic={mesh,z,speed:incoming?13+Math.random()*13:8+Math.random()*13,lane,direction,phase:Math.random()*Math.PI*2,baseSpeed:0,crashed:false,crashAge:0,crashVX:0,crashVZ:0,crashSpin:0,crashLift:0};
  traffic.baseSpeed=traffic.speed;
  trafficCars.push(traffic);return traffic;
 }
@@ -625,21 +625,58 @@ for(let i=0;i<TRAFFIC_TOTAL;i++)createTrafficCar(i);
 function updateTraffic(dt){
  const playerZ=trackZ(),now=performance.now()*.00045;
  for(const t of trafficCars){
+  if(t.crashed){
+   t.crashAge+=dt;t.crashVX*=Math.exp(-.42*dt);t.crashVZ*=Math.exp(-.42*dt);
+   t.mesh.position.x+=t.crashVX*dt;t.mesh.position.z+=t.crashVZ*dt;
+   const crashZ=THREE.MathUtils.clamp(t.mesh.position.z+trackLength/2,routeStart,trackLength-1);
+   t.mesh.position.y=Math.max(roadY(crashZ)+.03,t.mesh.position.y-t.crashLift*dt);
+   t.crashLift=Math.max(0,t.crashLift-9.81*dt);
+   t.mesh.rotation.x+=t.crashSpin*dt;
+   t.mesh.rotation.z=THREE.MathUtils.damp(t.mesh.rotation.z,t.crashSpin*.12,1.8,dt);
+   t.crashSpin*=Math.exp(-1.0*dt);
+   if(t.crashAge>7.5){
+    t.crashed=false;t.crashAge=0;t.mesh.rotation.set(0,0,0);
+    const incoming=t.direction<0;t.z=playerZ+(incoming?115:95)+Math.random()*280;
+    t.speed=t.direction<0?13+Math.random()*12:9+Math.random()*12;t.baseSpeed=t.speed;
+    t.mesh.position.set(roadX(t.z)+(incoming?1.55:-1.55),roadY(t.z)+.03,worldZ(t.z));
+   }
+   continue;
+  }
   t.z+=t.speed*t.direction*dt;
-  // Recycle each stream at opposite ends of the player's streamed-world window.
   if(t.direction>0&&(t.z>playerZ+WORLD_CHUNK_LENGTH*2.35||t.z>trackLength-18)){
    t.z=playerZ+90+Math.random()*320;t.speed=9+Math.random()*13;t.baseSpeed=t.speed;t.lane=-1.55;
   }else if(t.direction<0&&(t.z<playerZ-WORLD_CHUNK_LENGTH*1.65||t.z<routeStart+18)){
    t.z=playerZ+105+Math.random()*320;t.speed=12+Math.random()*16;t.baseSpeed=t.speed;t.lane=1.55;
   }
   const z=THREE.MathUtils.clamp(t.z,routeStart,trackLength-1),heading=roadHeading(z);
-  const laneDrift=Math.sin(now+t.phase)*.035;
-  const laneOffset=t.lane+laneDrift,normal=roadNormal(z);
+  const laneDrift=Math.sin(now+t.phase)*.035,laneOffset=t.lane+laneDrift,normal=roadNormal(z);
   t.mesh.position.set(roadX(z)+normal.x*laneOffset,roadY(z)+.03,worldZ(z)+normal.z*laneOffset);
   t.mesh.rotation.set(0,heading+(t.direction<0?Math.PI:0),0);
  }
- // Mild randomized speed variation keeps the traffic from moving as a rigid convoy.
+ // Player-to-AI impact transfers closing speed into a skidding and tumbling AI wreck.
  for(const t of trafficCars){
+  if(t.crashed)continue;
+  const dx=t.mesh.position.x-car.position.x,dz=t.mesh.position.z-car.position.z,distance=Math.hypot(dx,dz);
+  if(distance>3.35||distance<.001)continue;
+  const nx=dx/distance,nz=dz/distance;
+  const playerVX=Math.sin(yaw)*speed+Math.cos(yaw)*lateralSpeed;
+  const playerVZ=Math.cos(yaw)*speed-Math.sin(yaw)*lateralSpeed;
+  const closing=(playerVX-t.speed*t.direction)*nx+playerVZ*nz;
+  if(closing<1.2)continue;
+  t.crashed=true;t.crashAge=0;
+  const impact=THREE.MathUtils.clamp(closing,2,34);
+  t.crashVX=nx*(impact*.72)+playerVX*.24;t.crashVZ=nz*(impact*.72)+playerVZ*.24;
+  t.crashSpin=(nx*Math.cos(yaw)-nz*Math.sin(yaw))*(1.8+impact*.11)+(Math.random()-.5)*1.2;
+  t.crashLift=Math.min(5,impact*.12);
+  t.mesh.position.x+=nx*(3.35-distance+.08);t.mesh.position.z+=nz*(3.35-distance+.08);
+  t.mesh.rotation.y=Math.atan2(t.crashVX,t.crashVZ);
+  t.mesh.rotation.x=(Math.random()-.5)*.18;t.mesh.rotation.z=(Math.random()-.5)*.16;
+  speed*=THREE.MathUtils.clamp(1-impact*.018,.38,.82);
+  yawRate+=t.crashSpin*.10;
+  showToast('TRAFFIC COLLISION · AI WRECKED');
+ }
+ for(const t of trafficCars){
+  if(t.crashed)continue;
   const variation=Math.sin(now*1.7+t.phase)*.8+Math.sin(now*.63+t.phase*2)*.45;
   t.speed=THREE.MathUtils.clamp(t.baseSpeed+variation,t.direction<0?11:7,t.direction<0?30:24);
  }
@@ -1092,9 +1129,12 @@ function update(dt){
  // A dynamic single-track road-car model with a simple rear wheel-speed state for the handbrake.
  // Parameters are representative estimates for a compact passenger car, not measured vehicle data.
  // Sports mode switches to a lighter, high-torque rally setup with stronger brakes and grip.
- const vehicle={mass:sportsMode?1120:1200,iz:sportsMode?1650:1800,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:sportsMode?0.48:0.52,
-   cf:sportsMode?70000:62000,cr:sportsMode?72000:68000,mu:sportsMode?1.04:0.92,engineForce:sportsMode?8200:3500,brakeForce:sportsMode?10200:8500,cdA:sportsMode?0.62:0.68,airDensity:1.225,rolling:170,
-   wheelRadius:.31,rearBrakeTorque:sportsMode?4800:4200};
+ // Default now uses the former Sport baseline; Sport is a sharper, higher-output rally tune.
+ const vehicle={mass:1120,iz:1650,lf:1.10,lr:1.55,wheelbase:2.65,cgHeight:0.48,
+   cf:sportsMode?82000:70000,cr:sportsMode?79000:72000,mu:sportsMode?1.16:1.04,
+   engineForce:sportsMode?10400:8200,brakeForce:sportsMode?17400:14800,
+   cdA:sportsMode?0.60:0.62,airDensity:1.225,rolling:170,
+   wheelRadius:.31,rearBrakeTorque:sportsMode?7600:6800};
  const throttle=input.gas&&driveMode!=='N'?1:0, braking=input.brake?1:0, handbrake=input.handbrake?1:0;
  const zForRoad=THREE.MathUtils.clamp(trackZ(),0,trackLength);
  const roadOffset=car.position.x-roadX(zForRoad);
@@ -1103,7 +1143,7 @@ function update(dt){
  const mu=onRoad?vehicle.mu:(sportsMode?0.68:0.48);
  const vx=speed, absVx=Math.abs(vx);
  // Progressive steering ratio: quick around centre, calmer at speed to avoid twitchiness.
- const maxSteer=(sportsMode?0.46:0.43)/(1+absVx*(sportsMode?0.029:0.032));
+ const maxSteer=(sportsMode?0.52:0.46)/(1+absVx*(sportsMode?0.024:0.029));
  // Strong caster/trail-style self-aligning torque with a clear centre bias.
  // Tyre slip may influence the resting angle slightly, but cannot hold the wheel far off-centre.
  const tyreLoadBlend=THREE.MathUtils.smoothstep(absVx,0.5,18);
@@ -1130,7 +1170,7 @@ function update(dt){
  // Combine all active input sources instead of allowing one source to mask another.
  const steerInput=-THREE.MathUtils.clamp(keyboardSteer+buttonSteer+(steeringMode==='wheel'?wheelAngle/450:0),-1,1);
  // Faster steering rack response with a speed-sensitive rate limit.
- const steeringResponse=THREE.MathUtils.lerp(13.5,8.0,THREE.MathUtils.smoothstep(absVx,8,42));
+ const steeringResponse=THREE.MathUtils.lerp(sportsMode?18:15,sportsMode?11:9,THREE.MathUtils.smoothstep(absVx,8,42));
  steeringAngle=THREE.MathUtils.damp(steeringAngle,steerInput*maxSteer,steeringResponse,dt);
 
  // Longitudinal force balance.
@@ -1144,7 +1184,7 @@ function update(dt){
  let brakeForce=0;
  if(braking&&absVx>0.02)brakeForce=-Math.sign(vx)*vehicle.brakeForce;
  // Handbrake acts on the rear axle only, not as an artificial sideways impulse.
- const rearBrakeForce=handbrake?Math.min(vehicle.mass*6.0,vehicle.rearBrakeTorque/vehicle.wheelRadius*2):0;
+ const rearBrakeForce=handbrake?Math.min(vehicle.mass*(sportsMode?13.5:12.5),vehicle.rearBrakeTorque/vehicle.wheelRadius*2):0;
  if(driveMode==='N')driveForce=0;
  const longitudinalAccel=(driveForce+brakeForce-aeroForce-rollingForce-Math.sign(vx)*rearBrakeForce)/vehicle.mass;
  speed+=longitudinalAccel*dt;
@@ -1157,12 +1197,12 @@ function update(dt){
  // Rear wheel angular velocity decays under handbrake torque. Lock ratio reduces rear
  // lateral capacity gradually, rather than instantly making the car drift.
  const freeRearOmega=speed/vehicle.wheelRadius;
- const rearBrakeAngularDecel=vehicle.rearBrakeTorque/0.55;
- if(handbrake)rearWheelOmega=THREE.MathUtils.damp(rearWheelOmega,0,Math.min(42,rearBrakeAngularDecel/Math.max(1,Math.abs(freeRearOmega))),dt);
+ const rearBrakeAngularDecel=vehicle.rearBrakeTorque/0.24;
+ if(handbrake)rearWheelOmega=THREE.MathUtils.damp(rearWheelOmega,0,Math.min(90,rearBrakeAngularDecel/Math.max(1,Math.abs(freeRearOmega))),dt);
  else rearWheelOmega=THREE.MathUtils.damp(rearWheelOmega,freeRearOmega,10,dt);
  const wheelSlipRatio=absVx>1?Math.abs(vehicle.wheelRadius*rearWheelOmega-vx)/absVx:0;
  // A pulled handbrake locks the rear axle quickly; locked rear tyres lose most lateral grip and allow a controllable slide.
- const rearLock=handbrake?THREE.MathUtils.clamp(0.88+wheelSlipRatio*0.12,0,0.98):0;
+ const rearLock=handbrake?THREE.MathUtils.clamp(0.97+wheelSlipRatio*0.03,0,0.995):0;
  
  // Tyre forces are disabled at standstill, preventing steering input from moving the parked car.
  // Fade in tyre response smoothly as the car gains rolling speed.
@@ -1182,18 +1222,18 @@ function update(dt){
  // It fades out smoothly when the driver straightens up instead of snapping back to full grip.
  const rearSlipMagnitude=Math.abs(alphaRear);
  const poweredTurn=throttle>0&&Math.abs(steerInput)>0.18&&absVx>7&&rearSlipMagnitude>0.12;
- const driftTarget=absVx>5?(handbrake?1:(poweredTurn?THREE.MathUtils.clamp(0.35+rearSlipMagnitude*0.75,0.35,0.72):0)):0;
+ const driftTarget=absVx>4?(handbrake?1:(poweredTurn?THREE.MathUtils.clamp(0.42+rearSlipMagnitude*0.82,0.42,0.82):0)):0;
  driftAmount=THREE.MathUtils.damp(driftAmount,driftTarget,driftTarget>driftAmount?4.8:2.0,dt);
  const transfer=THREE.MathUtils.clamp(longitudinalAccel*vehicle.cgHeight/vehicle.wheelbase,-0.22,0.22);
  const frontLoad=vehicle.mass*9.81*(vehicle.lr/vehicle.wheelbase-transfer);
  const rearLoad=vehicle.mass*9.81*(vehicle.lf/vehicle.wheelbase+transfer);
  const frontLimit=mu*frontLoad;
  // Rear tyres progressively lose lateral grip during a slide, while front grip stays available for counter-steering.
- const rearMu=mu*(1-rearLock)*(1-driftAmount*0.48);
+ const rearMu=mu*(1-rearLock)*(1-driftAmount*0.62);
  const rearLimit=Math.max(250,rearMu*rearLoad);
  // Smooth tyre-force saturation avoids the abrupt feel of a hard force clamp.
  let frontFy=-frontLimit*Math.tanh(vehicle.cf*alphaFront/Math.max(1,frontLimit))*lowSpeedBlend;
- let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;
+ let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;\n // Locked rear tyres shed lateral authority so the handbrake rotates the car instead of adding side-grip.\n if(handbrake)rearFy*=0.035;
  // Combined-slip approximation: braking/drive consumes some of each axle's lateral grip.
  const frontLongUse=THREE.MathUtils.clamp(Math.abs(brakeForce)/Math.max(1,frontLimit),0,0.75);
  const rearLongUse=THREE.MathUtils.clamp((Math.abs(brakeForce)*0.55+Math.abs(driveForce)*0.30+rearBrakeForce)/Math.max(1,rearLimit),0,0.92);
