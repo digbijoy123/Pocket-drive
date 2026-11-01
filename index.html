@@ -1233,7 +1233,9 @@ function update(dt){
  const rearLimit=Math.max(250,rearMu*rearLoad);
  // Smooth tyre-force saturation avoids the abrupt feel of a hard force clamp.
  let frontFy=-frontLimit*Math.tanh(vehicle.cf*alphaFront/Math.max(1,frontLimit))*lowSpeedBlend;
- let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;\n // Locked rear tyres shed lateral authority so the handbrake rotates the car instead of adding side-grip.\n if(handbrake)rearFy*=0.035;
+ let rearFy=-rearLimit*Math.tanh(vehicle.cr*alphaRear/Math.max(1,rearLimit))*lowSpeedBlend;
+ // Locked rear tyres shed lateral authority so the handbrake rotates the car instead of adding side-grip.
+ if(handbrake)rearFy*=0.035;
  // Combined-slip approximation: braking/drive consumes some of each axle's lateral grip.
  const frontLongUse=THREE.MathUtils.clamp(Math.abs(brakeForce)/Math.max(1,frontLimit),0,0.75);
  const rearLongUse=THREE.MathUtils.clamp((Math.abs(brakeForce)*0.55+Math.abs(driveForce)*0.30+rearBrakeForce)/Math.max(1,rearLimit),0,0.92);
